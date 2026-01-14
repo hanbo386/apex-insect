@@ -125,7 +125,8 @@ export class Ant {
         // --- Smooth Growth ---
         if (Math.abs(this.scale - this.targetScale) > 0.01) {
             this.scale += (this.targetScale - this.scale) * 0.05;
-            this.initLegs(); // Re-init legs when scale changes perceptibly
+            // Update legs scale without resetting them
+            this.legs.forEach(leg => leg.updateScale(this.scale));
         } else {
             this.scale = this.targetScale;
         }

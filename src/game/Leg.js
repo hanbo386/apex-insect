@@ -8,35 +8,43 @@ export class Leg {
         this.id = id;
         this.side = side; // -1 左, 1 右
 
+        this.side = side; // -1 左, 1 右
+
+        this.baseOffsetX = offsetX;
+        this.baseOffsetY = offsetY;
         this.offset = new Vec2(offsetX, offsetY);
+
+        this.currentPos = new Vec2(0, 0);
+        this.targetPos = new Vec2(0, 0);
+        this.isMoving = false;
+        this.moveProgress = 0;
+        this.liftHeight = 0;
+
+        this.updateScale(scale);
+    }
+
+    updateScale(scale) {
+        this.scale = scale;
 
         // --- 修正理想落脚点 (Ideal Foot Position) ---
         // 腿进一步缩短 (原值 * 0.66)
         let splayX = 0; // 前后张开程度
         let spanY = 11 * scale; // 左右张开宽度 (16.5 -> 11)
 
-        if (id === 0 || id === 3) { // 前腿
+        if (this.id === 0 || this.id === 3) { // 前腿
             splayX = 6 * scale; // 9 -> 6
             spanY = 8 * scale;  // 12 -> 8
         }
-        if (id === 2 || id === 5) { // 后腿
+        if (this.id === 2 || this.id === 5) { // 后腿
             splayX = -6 * scale; // -9 -> -6
             spanY = 9 * scale;   // 13.5 -> 9
         }
 
-        this.idealOffset = new Vec2(offsetX + splayX, offsetY + (side * spanY));
-
-        this.currentPos = new Vec2(0, 0);
-        this.targetPos = new Vec2(0, 0);
-
-        this.isMoving = false;
-        this.moveProgress = 0;
-        this.liftHeight = 0;
+        this.idealOffset = new Vec2(this.baseOffsetX + splayX, this.baseOffsetY + (this.side * spanY));
 
         // IK 骨骼长度 (再缩短 1/3)
         this.femurLen = 7 * scale;     // 大腿 (10.5 -> 7)
         this.tibiaLen = 9.5 * scale;   // 小腿 (14.25 -> 9.5)
-        this.scale = scale;
 
         // 步态参数
         this.stepThreshold = 11 * scale; // 步幅阈值 (16.5 -> 11)
