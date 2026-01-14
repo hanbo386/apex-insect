@@ -1,40 +1,65 @@
+html,
 body {
     margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
     overflow: hidden;
-    background-color: #e6dcc3; /* 浅色沙土背景 */
+    background-color: #e6dcc3;
+    /* 浅色沙土背景 */
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    color: #333; /* 文字颜色改深 */
+    color: #333;
+    /* 文字颜色改深 */
 }
+
 canvas {
     display: block;
 }
+
 #ui {
     position: absolute;
-    top: 20px;
-    left: 20px;
+    top: 0;
+    left: 0;
+    width: 100%;
+    box-sizing: border-box;
     pointer-events: none;
-    background: rgba(255, 255, 255, 0.8); /* 浅色半透明背景 */
-    padding: 15px;
-    border-radius: 8px;
-    border: 1px solid #aaa;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-}
-h1 {
-    margin: 0 0 10px 0;
-    font-size: 18px;
-    color: #8c5e26;
-}
-p {
-    margin: 5px 0;
+    background: transparent;
+    padding: 8px 20px;
+    border-bottom: none;
+    box-shadow: none;
+    text-shadow: 1px 1px 2px white, -1px -1px 2px white, 1px -1px 2px white, -1px 1px 2px white;
+
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     font-size: 14px;
 }
+
+.ui-group {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 16px;
+    color: #8c5e26;
+    margin-right: 10px;
+}
+
+p {
+    margin: 0;
+}
+
 .key {
     display: inline-block;
     background: #fff;
-    padding: 2px 6px;
+    padding: 1px 5px;
     border-radius: 4px;
     border: 1px solid #ccc;
     border-bottom: 2px solid #aaa;
     font-weight: bold;
     color: #333;
+    font-size: 12px;
 }

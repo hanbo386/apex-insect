@@ -11,14 +11,39 @@ export class Ant {
         this.angle = 0;
         this.speed = 0;
         this.maxSpeed = 3.2;
+
+        // --- 成长属性 ---
+        this.level = 1;
+        this.xp = 0;
+        this.xpToNext = 5; // 升级所需初始 XP
+        this.evolutionStage = 0; // 0: 初始, 1: 进化形态
         this.scale = 1.0;
+        this.baseScale = 1.0;
+        this.targetScale = 1.0;
+
+        this.flashTimer = 0; // Visual effect for leveling up
+
+        // 颜色配置
+        this.colors = {
+            head: '#4a331c',
+            thorax: '#4a331c',
+            abdomen: '#3d2612',
+            gradStart: '#755430',
+            gradEnd: '#1a1108'
+        };
 
         this.thoraxPos = this.pos.clone();
         this.abdomenPos = this.pos.clone();
         this.headPos = this.pos.clone();
 
-        this.legs = [];
 
+        this.legs = [];
+        this.initLegs();
+        this.gaitState = 0;
+    }
+
+    initLegs() {
+        this.legs = [];
         // --- 身体尺寸没变，但是为了配合短腿，腿根部位置保持紧凑 ---
         let legConfigs = [
             { id: 0, side: -1, x: 5 },  // Left Front
@@ -33,15 +58,80 @@ export class Ant {
             this.legs.push(new Leg(cfg.id, cfg.side, cfg.x, cfg.side * 2.5, this.scale));
         });
 
+        legConfigs.forEach(cfg => {
+            this.legs.push(new Leg(cfg.id, cfg.side, cfg.x, cfg.side * 2.5, this.scale));
+        });
+
         this.legs.forEach(leg => {
             leg.currentPos = leg.idealOffset.add(this.pos);
             leg.targetPos = leg.currentPos.clone();
         });
 
-        this.gaitState = 0;
+        // Callback
+        this.onLevelUp = null;
     }
 
+    gainXp(amount) {
+        this.xp += amount;
+        if (this.xp >= this.xpToNext) {
+            this.levelUp();
+        }
+    }
+
+    levelUp() {
+        this.xp -= this.xpToNext;
+        this.level++;
+        this.xpToNext = Math.floor(this.xpToNext * 1.5); // 升级难度增加
+
+        // 每次升级体型变大 15%
+        this.baseScale *= 1.15;
+        this.targetScale = this.baseScale;
+
+        // 重新初始化腿部以适应新尺寸
+        this.initLegs();
+
+        // Trigger Flash Effect
+        this.flashTimer = 30; // 30 frames (~0.5s)
+
+        // 检查进化
+        if (this.level % 5 === 0) {
+            this.evolve();
+        }
+
+        if (this.onLevelUp) this.onLevelUp(this.level);
+    }
+
+    evolve() {
+        this.evolutionStage++;
+        // 进化改变外观
+        if (this.evolutionStage === 1) {
+            // 进化成 "红甲虫皇"
+            this.colors = {
+                head: '#8B0000',     // 深红
+                thorax: '#800000',   // 栗色
+                abdomen: '#A52A2A',  // 棕红
+                gradStart: '#FF4500',// 橙红高光
+                gradEnd: '#2F0000'   // 近黑阴影
+            };
+            this.maxSpeed *= 1.2; // 速度提升
+        } else {
+            // 后续进化...
+            this.colors.gradStart = '#FFD700'; // 泛金光
+        }
+    }
+
+
     update(input) {
+        // --- Smooth Growth ---
+        if (Math.abs(this.scale - this.targetScale) > 0.01) {
+            this.scale += (this.targetScale - this.scale) * 0.05;
+            this.initLegs(); // Re-init legs when scale changes perceptibly
+        } else {
+            this.scale = this.targetScale;
+        }
+
+        if (this.flashTimer > 0) this.flashTimer--;
+
         let dx = 0;
         let dy = 0;
         if (input.up) dy -= 1;
@@ -88,18 +178,34 @@ export class Ant {
     }
 
     draw(ctx) {
+        // --- Growth Flash Effect ---
+        if (this.flashTimer > 0) {
+            ctx.save();
+            ctx.translate(this.pos.x, this.pos.y);
+            let alpha = this.flashTimer / 30;
+            ctx.beginPath();
+            ctx.arc(0, 0, 30 * this.scale * (2 - alpha), 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 215, 0, ${alpha * 0.6})`; // Gold glow
+            ctx.fill();
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+        }
+
         this.legs.forEach(leg => {
             let hipWorldPos = leg.offset.rotate(this.angle).add(this.thoraxPos);
             leg.draw(ctx, hipWorldPos);
         });
 
-        // --- 身体 (保持微型尺寸) ---
-        // 腹部: 6/9
-        this.drawSegment(ctx, this.abdomenPos, 6 * this.scale, 9 * this.scale, this.angle, '#3d2612');
-        // 胸部: 4/6
-        this.drawSegment(ctx, this.thoraxPos, 4 * this.scale, 6 * this.scale, this.angle, '#4a331c');
-        // 头部: 3.5/5
-        this.drawSegment(ctx, this.headPos, 3.5 * this.scale, 5 * this.scale, this.angle, '#4a331c');
+        // --- 身体 (保持微型尺寸，随 scale 变化) ---
+        // 腹部
+        this.drawSegment(ctx, this.abdomenPos, 6 * this.scale, 9 * this.scale, this.angle, this.colors.abdomen);
+        // 胸部
+        this.drawSegment(ctx, this.thoraxPos, 4 * this.scale, 6 * this.scale, this.angle, this.colors.thorax);
+        // 头部
+        this.drawSegment(ctx, this.headPos, 3.5 * this.scale, 5 * this.scale, this.angle, this.colors.head);
+
 
         // 眼睛
         let eyeOffsetL = new Vec2(1.5, -2).rotate(this.angle).add(this.headPos);
@@ -122,10 +228,11 @@ export class Ant {
         ctx.rotate(angle);
 
         let grad = ctx.createRadialGradient(-w / 3, -h / 3, 1, 0, 0, w);
-        grad.addColorStop(0, '#755430');
+        grad.addColorStop(0, this.colors.gradStart);
         grad.addColorStop(0.5, color);
-        grad.addColorStop(1, '#1a1108');
+        grad.addColorStop(1, this.colors.gradEnd);
         ctx.fillStyle = grad;
+
 
         ctx.beginPath();
         ctx.ellipse(0, 0, h, w, 0, 0, Math.PI * 2);
