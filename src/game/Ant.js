@@ -101,6 +101,31 @@ export class Ant {
         if (this.onLevelUp) this.onLevelUp(this.level);
     }
 
+    setLevel(targetLevel) {
+        // Reset to base
+        this.level = 1;
+        this.xp = 0;
+        this.scale = 1.0;
+        this.baseScale = 1.0;
+        this.targetScale = 1.0;
+        this.evolutionStage = 0;
+        this.initLegs();
+
+        // Fast forward to target level
+        for (let i = 1; i < targetLevel; i++) {
+            // Simulate level up without effects
+            this.level++;
+            this.xpToNext = Math.floor(this.xpToNext * 1.5);
+            this.baseScale *= 1.15;
+            this.targetScale = this.baseScale;
+            if (this.level % 5 === 0) {
+                this.evolve();
+            }
+        }
+        this.scale = this.targetScale;
+        this.legs.forEach(leg => leg.updateScale(this.scale));
+    }
+
     evolve() {
         this.evolutionStage++;
         // 进化改变外观

@@ -40,6 +40,11 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => {
     if (keys.hasOwnProperty(e.key) || e.key === "Shift") keys[e.key] = false;
 });
+// Reset keys on focus loss to prevent stuck inputs
+window.addEventListener('blur', () => {
+    Object.keys(keys).forEach(k => keys[k] = false);
+});
+
 
 // Game Init
 const ant = new Ant(width / 2, height / 2);
@@ -61,18 +66,32 @@ function spawnCreeps() {
 
     // 进化后，有概率生成竞争对手 (Rival Ant)
     // 简单起见，Rival 复用 Ant 类，但不受控
-    if (ant.evolutionStage > 0 && Math.random() < 0.2) {
+    // 进化后，生成低阶竞争对手
+    if (ant.evolutionStage > 0 && Math.random() < 0.3) {
         let rival = new Ant(spawnPos.x, spawnPos.y);
-        // Rival 属性调整
-        rival.level = ant.level; // 与玩家同级
-        rival.scale = ant.scale * (0.8 + Math.random() * 0.4);
-        rival.isRival = true; // 标记
-        rival.colors = { // 敌对颜色 - 譬如黑色
-            head: '#111', thorax: '#222', abdomen: '#000',
-            gradStart: '#333', gradEnd: '#000'
-        };
-        rival.initLegs();
-        creeps.push(rival); // 放入同个池子或者单独池子，为了方便先放creeps
+
+        // 逻辑: 比玩家低 1-2 个形态
+        // 形态 0: Lvl 1, 形态 1: Lvl 5, 形态 2: Lvl 10...
+        // 公式: Level = Stage * 5 + 1
+
+        let diff = 1 + Math.floor(Math.random() * 2); // 1 or 2 stages lower
+        let targetStage = Math.max(0, ant.evolutionStage - diff);
+        let targetLevel = targetStage * 5 + 1;
+
+        rival.setLevel(targetLevel);
+        rival.isRival = true;
+
+        // 如果是同形态（极低概率或不可能），或者是只是低级但同形态，加点颜色区分
+        // 但通常 targetStage < ant.evolutionStage，所以外观应该已经由 evolve() 决定了
+        // 为了区分敌我，还是强制给个"敌对色"或者保留 evolve 的颜色但加深？
+        // 用户的需求是 "新出现的npc应该比玩家的形态低1-2个"，所以如果玩家是红(Stage 1)，NPC是黑(Stage 0)。
+        // Stage 0 默认是黑/棕色。Stage 1 是红色。
+        // 我们只需要确保 .isRival 标记即可，颜色由 setLevel -> evolve 自动处理
+
+        // 为了视觉区分 "Rival" 和普通 Creep，我们可以稍微调整颜色，或者就让它保持自然
+        // 既然是 "竞争对手"，保持自然形态颜色最好。
+
+        creeps.push(rival);
     } else {
         creeps.push(new Creep(spawnPos.x, spawnPos.y));
     }
