@@ -79,6 +79,14 @@ document.getElementById('evolve-btn').addEventListener('click', () => {
     if (document.getElementById('gameCanvas')) document.getElementById('gameCanvas').focus();
 });
 
+document.getElementById('xp-btn').addEventListener('click', () => {
+    console.log("DEBUG: Cheat XP clicked.");
+    player.gainXp(500);
+    // Force focus back
+    window.focus();
+    if (document.getElementById('gameCanvas')) document.getElementById('gameCanvas').focus();
+});
+
 
 
 // Game Init

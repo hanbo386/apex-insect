@@ -157,13 +157,16 @@ export class Insect {
 
         // 1. Advance Stages
         while (this.evolutionStage < targetStage) {
-            // Simulate maxing out typical levels for previous stages to get scale right?
-            // Actually, evolve() resets level to 1.
-            // So we just need to call evolve() targetStage times.
-            // But evolve() assumes we just finished previous stage. 
-            // We should simulate the growth of previous stages too?
-            // For simplicity, let's just force the stage.
-            this.evolve();
+            // Simulate growth from Level 1 to 5 for this stage
+            // We use the same multiplier as levelUp (1.10) applied 4 times (Lvl 1->5)
+            // This ensures the base scale matches what a player would have achieved.
+            this.baseScale *= Math.pow(1.10, 4);
+
+            // Force sync current scale to base before evolving
+            this.scale = this.baseScale;
+            this.targetScale = this.baseScale;
+
+            this.evolve(true);
         }
 
         // 2. Advance Levels within current Stage
@@ -177,14 +180,26 @@ export class Insect {
         this.onEvolve = originalOnEvolve;
 
         // Update visual form logic immediately
-        // (evolve() call above set the internal form string, but we might need to refresh legs/visuals)
+        // Force Final Sync of Scale
+        this.scale = this.targetScale;
         this.initLegs();
     }
 
-    evolve() {
+    evolve(isInstant = false) {
         this.evolutionStage++;
         this.level = 1; // RESET Level to 1
         this.xp = 0;    // Reset XP
+
+        // Structural Evolution Growth
+        // Ensure New Stage Lvl 1 > Old Stage Lvl 5
+        // Level Up gives 1.1x. Max level (5) is ~1.46x.
+        // We apply an extra visual bump for the new stage.
+        this.baseScale *= 1.25;
+        this.targetScale = this.baseScale;
+
+        if (isInstant) {
+            this.scale = this.targetScale;
+        }
 
         // Increase difficulty for next stage
         // Base XP requirement for Level 1 of new stage should be higher
