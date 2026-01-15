@@ -60,6 +60,10 @@ const ant = new Ant(width / 2, height / 2);
 ant.onLevelUp = (lvl) => {
     texts.push(new FloatingText(ant.pos.x, ant.pos.y - 50, `LEVEL UP! (${lvl})`, '#00ff00', 40));
 };
+ant.onEvolve = (formName) => {
+    // Large, prominent gold text
+    texts.push(new FloatingText(ant.pos.x, ant.pos.y - 80, `进化成功: ${formName}!`, '#FFD700', 60, 4.0));
+};
 const env = new Environment();
 let camera = new Vec2(0, 0);
 

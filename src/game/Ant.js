@@ -42,9 +42,15 @@ export class Ant {
         this.headPos = this.pos.clone();
 
 
+
         this.legs = [];
         this.initLegs();
         this.gaitState = 0;
+
+        // --- Ladybug Vars ---
+        this.form = 'ANT';
+        this.walkCycle = 0;
+        this.antennaTimer = 0;
     }
 
     initLegs() {
@@ -133,21 +139,19 @@ export class Ant {
 
     evolve() {
         this.evolutionStage++;
+        let formName = "";
+
         // 进化改变外观
         if (this.evolutionStage === 1) {
-            // 进化成 "红甲虫皇"
-            this.colors = {
-                head: '#8B0000',     // 深红
-                thorax: '#800000',   // 栗色
-                abdomen: '#A52A2A',  // 棕红
-                gradStart: '#FF4500',// 橙红高光
-                gradEnd: '#2F0000'   // 近黑阴影
-            };
-            this.maxSpeed *= 1.2; // 速度提升
-        } else {
-            // 后续进化...
-            this.colors.gradStart = '#FFD700'; // 泛金光
+            this.form = 'LADYBUG';
+            this.maxSpeed *= 1.2;
+            formName = "瓢虫 (LADYBUG)";
+        } else if (this.evolutionStage === 2) {
+            // Future forms...
+            formName = "未知 (UNKNOWN)";
         }
+
+        if (this.onEvolve) this.onEvolve(formName);
     }
 
 
@@ -207,6 +211,16 @@ export class Ant {
         this.vel = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(this.speed);
         this.pos = this.pos.add(this.vel);
 
+        // --- Update Animations ---
+        if (this.form === 'LADYBUG') {
+            // 步态速度随移动速度变化
+            if (this.speed > 0.1) {
+                this.walkCycle += 0.1 * (this.speed / this.maxSpeed);
+            }
+            this.antennaTimer += 0.05;
+            return; // Skip Ant specific IK update
+        }
+
         this.thoraxPos = this.pos;
 
         // --- 身体跟随 ---
@@ -244,6 +258,11 @@ export class Ant {
             ctx.lineWidth = 2;
             ctx.stroke();
             ctx.restore();
+        }
+
+        if (this.form === 'LADYBUG') {
+            this.drawLadybug(ctx);
+            return;
         }
 
         this.legs.forEach(leg => {
@@ -332,5 +351,199 @@ export class Ant {
         ctx.arc(4, 1.5, 2.5, Math.PI / 2, Math.PI * 1.5, true);
         ctx.stroke();
         ctx.restore();
+    }
+
+    // --- Ladybug Specific Drawing Logic ---
+    drawLadybug(ctx) {
+        ctx.save();
+        ctx.translate(this.pos.x, this.pos.y);
+        ctx.rotate(this.angle + Math.PI / 2); // Canvas 0度通常向右，我们需要修正旋转以便计算方便
+
+        let size = 12.5 * this.scale; // Base size adapted to scale (Reduced by half)
+
+        // 阴影
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        ctx.beginPath();
+        ctx.ellipse(0, 5 * this.scale, size * 0.9, size * 1.1, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // --- 腿部 (Legs) ---
+        this.drawLadybugLegs(ctx, size);
+
+        // --- 身体 (Body/Elytra) ---
+        // 鞘翅红色渐变
+        const bodyGrad = ctx.createRadialGradient(-5 * this.scale, -5 * this.scale, 2 * this.scale, 0, 0, size * 1.2);
+        bodyGrad.addColorStop(0, '#ff4d4d');
+        bodyGrad.addColorStop(0.4, '#cc0000');
+        bodyGrad.addColorStop(1, '#800000');
+
+        ctx.fillStyle = bodyGrad;
+        ctx.beginPath();
+        // 稍微拉长的半球体
+        ctx.ellipse(0, 5 * this.scale, size * 0.95, size * 1.1, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 鞘翅中间的分隔线
+        ctx.strokeStyle = 'rgba(50, 0, 0, 0.3)';
+        ctx.lineWidth = 1 * this.scale;
+        ctx.beginPath();
+        ctx.moveTo(0, -size * 0.2);
+        ctx.lineTo(0, size * 1.6);
+        ctx.stroke();
+
+        // 斑点 (Spots)
+        this.drawLadybugSpots(ctx, size);
+
+        // 高光 (Specular Highlight) - 让甲壳看起来硬且亮
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.beginPath();
+        ctx.ellipse(-size * 0.4, 0, size * 0.2, size * 0.4, 0.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // --- 头部 (Head) ---
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(0, -size * 0.8, size * 0.55, Math.PI, 0);
+        ctx.fill();
+
+        // 头部光泽
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.beginPath();
+        ctx.arc(size * 0.2, -size * 1.0, size * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+
+        // --- 触角 (Antennae) ---
+        this.drawLadybugAntennae(ctx, size);
+
+        ctx.restore();
+    }
+
+    drawLadybugLegs(ctx, size) {
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 2.5 * this.scale;
+        ctx.lineCap = 'round';
+
+        // 腿部参数
+        const legX = size * 0.75; // 身体连接点 X
+        const legLen1 = size * 0.55; // 大腿长
+        const legLen2 = size * 0.65; // 小腿长
+
+        // 步态相位：三角步态 (Tripod Gait)
+        const gaitA = Math.sin(this.walkCycle * Math.PI * 2);
+        const gaitB = Math.sin(this.walkCycle * Math.PI * 2 + Math.PI);
+
+        // 基础角度配置 (右侧)
+        // 0为向右, -PI/2为向上(头), PI/2为向下(尾)
+        const angleFront = -0.7; // 右前: 约 -40度
+        const angleMid = 0.0; // 右中: 0度
+        const angleBack = 0.7; // 右后: 约 40度
+
+        // Y轴位置 (相对于中心)
+        const yFront = -size * 0.5;
+        const yMid = size * 0.1;
+        const yBack = size * 0.7;
+
+        // 腿部定义：完全对称分布
+        const legs = [
+            // --- 左侧腿 (X为负, 角度镜像) ---
+            { x: -legX, y: yFront, baseAngle: Math.PI - angleFront, phase: gaitA, isLeft: true },
+            { x: -legX, y: yMid, baseAngle: Math.PI - angleMid, phase: gaitB, isLeft: true },
+            { x: -legX, y: yBack, baseAngle: Math.PI - angleBack, phase: gaitA, isLeft: true },
+
+            // --- 右侧腿 (X为正) ---
+            { x: legX, y: yFront, baseAngle: angleFront, phase: gaitB, isLeft: false },
+            { x: legX, y: yMid, baseAngle: angleMid, phase: gaitA, isLeft: false },
+            { x: legX, y: yBack, baseAngle: angleBack, phase: gaitB, isLeft: false },
+        ];
+
+        legs.forEach((leg) => {
+            // 动态角度摆动幅度
+            const swing = leg.phase * 0.35;
+
+            ctx.save();
+            ctx.translate(leg.x, leg.y);
+
+            // 1. 大腿角度
+            let angle1 = leg.baseAngle;
+            // 摆动方向修正
+            angle1 += swing;
+
+            // 绘制大腿
+            const kneeX = Math.cos(angle1) * legLen1;
+            const kneeY = Math.sin(angle1) * legLen1;
+
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(kneeX, kneeY);
+            ctx.stroke();
+
+            // 2. 小腿 (膝盖处弯曲)
+            ctx.translate(kneeX, kneeY);
+
+            // 弯曲角度
+            const kneeBend = 1.2;
+            let angle2 = angle1 + (leg.isLeft ? -kneeBend : kneeBend);
+
+            // 运动时小腿也会伸缩一点
+            angle2 += leg.phase * 0.15;
+
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(Math.cos(angle2) * legLen2, Math.sin(angle2) * legLen2);
+            ctx.stroke();
+
+            ctx.restore();
+        });
+    }
+
+    drawLadybugSpots(ctx, size) {
+        ctx.fillStyle = '#000';
+        const spots = [
+            { x: -size * 0.4, y: 0, r: size * 0.2 },
+            { x: size * 0.4, y: 0, r: size * 0.2 },
+            { x: -size * 0.5, y: size * 0.6, r: size * 0.18 },
+            { x: size * 0.5, y: size * 0.6, r: size * 0.18 },
+            { x: -size * 0.3, y: size * 1.1, r: size * 0.12 },
+            { x: size * 0.3, y: size * 1.1, r: size * 0.12 },
+            // 中央靠近头部的一个点
+            { x: 0, y: -size * 0.2, r: size * 0.15 },
+        ];
+
+        spots.forEach(spot => {
+            ctx.beginPath();
+            ctx.arc(spot.x, spot.y, spot.r, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+
+    drawLadybugAntennae(ctx, size) {
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 1.5 * this.scale;
+
+        // 触角基座位置
+        const baseX = size * 0.2;
+        const baseY = -size * 1.2;
+
+        // 随机微动 + 随速度后掠
+        const twitchL = Math.sin(this.antennaTimer) * 0.1;
+        const twitchR = Math.cos(this.antennaTimer * 1.3) * 0.1;
+
+        // 左触角
+        ctx.beginPath();
+        ctx.moveTo(-baseX, baseY);
+        ctx.quadraticCurveTo(
+            -baseX * 2, baseY - 10 * this.scale,
+            -baseX * 3 + twitchL * 10, baseY - 5 * this.scale + Math.abs(this.speed) * 2
+        );
+        ctx.stroke();
+
+        // 右触角
+        ctx.beginPath();
+        ctx.moveTo(baseX, baseY);
+        ctx.quadraticCurveTo(
+            baseX * 2, baseY - 10 * this.scale,
+            baseX * 3 + twitchR * 10, baseY - 5 * this.scale + Math.abs(this.speed) * 2
+        );
+        ctx.stroke();
     }
 }
