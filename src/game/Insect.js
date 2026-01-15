@@ -1191,6 +1191,38 @@ export class Insect {
         ctx.restore();
     }
 
+    getEatRange() {
+        if (this.form === 'SPIDER') {
+            // Legs are long (120 * scale). Let's use 80% of leg length as eat range.
+            return SPIDER_CONFIG.legLength * 0.8 * this.scale;
+        }
+        return 25 * this.scale;
+    }
+
+    onEat(targetPos) {
+        if (this.form === 'SPIDER' && this.spiderLegs.length >= 2) {
+            // Front legs: Indices 0 and 1 (Pair 0)
+            const frontLeft = this.spiderLegs[0];
+            const frontRight = this.spiderLegs[1];
+
+            // 1. Reach for food
+            frontLeft.overrideTarget = targetPos;
+            frontRight.overrideTarget = targetPos;
+
+            // 2. Pull to mouth
+            setTimeout(() => {
+                frontLeft.overrideTarget = this.headPos;
+                frontRight.overrideTarget = this.headPos;
+
+                // 3. Release
+                setTimeout(() => {
+                    frontLeft.overrideTarget = null;
+                    frontRight.overrideTarget = null;
+                }, 200);
+            }, 100);
+        }
+    }
+
     toggleGait() {
         // Debounce toggle to prevent rapid flickering
         const now = Date.now();

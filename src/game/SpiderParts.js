@@ -26,6 +26,9 @@ export class SpiderLeg {
         this.currentPos = new Vec2(0, 0);
         this.targetPos = new Vec2(0, 0);
         this.idealPos = new Vec2(0, 0);
+        this.overrideTarget = null;
+
+        this.isStepping = false;
 
         this.isStepping = false;
         this.stepProgress = 0;
@@ -60,6 +63,16 @@ export class SpiderLeg {
         const parentY = this.parent.pos.y;
         const scale = this.scale;
         const stepGroup = this.parent.stepGroup; // 0 or 1
+
+        // Animation Override
+        if (this.overrideTarget) {
+            this.targetPos.x = this.overrideTarget.x;
+            this.targetPos.y = this.overrideTarget.y;
+            // Simple ease towards target
+            this.currentPos.x = lerp(this.currentPos.x, this.targetPos.x, 0.25);
+            this.currentPos.y = lerp(this.currentPos.y, this.targetPos.y, 0.25);
+            return;
+        }
 
         // Calculate Ideal Position
         const spread = 0.8 + (this.index * 0.1);

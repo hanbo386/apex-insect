@@ -222,9 +222,7 @@ function gameLoop() {
         }
 
         // 碰撞/进食检测
-        // 蚂蚁是个椭圆，简单用距离判断
-        // Increased range: 25 * scale (was 10)
-        let eatDist = (25 * player.scale) + (c.isRival ? 10 * c.scale : c.size);
+        let eatDist = player.getEatRange() + (c.isRival ? 10 * c.scale : c.size);
 
         if (c.pos.dist(player.pos) < eatDist) {
             // Restriction Logic:
@@ -253,6 +251,8 @@ function gameLoop() {
             // Eat!
             let xpGain = c.isRival ? 20 * (c.scale) : (1 + Math.floor(c.size));
             player.gainXp(xpGain);
+            // Visual & Animation
+            player.onEat(c.pos);
 
             // Note: XP overhead text removed as requested
 
