@@ -63,3 +63,20 @@ p {
     color: #333;
     font-size: 12px;
 }
+
+#stamina-bar-bg {
+    width: 100px;
+    height: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid #888;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+#stamina-bar-fill {
+    width: 100%;
+    height: 100%;
+    background: #00ff00;
+    /* Green */
+    transition: width 0.1s linear;
+}

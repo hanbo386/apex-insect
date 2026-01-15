@@ -12,6 +12,11 @@ export class Ant {
         this.speed = 0;
         this.maxSpeed = 3.2;
 
+        // --- Stamina ---
+        this.stamina = 100;
+        this.maxStamina = 100;
+        this.canSprint = true;
+
         // --- 成长属性 ---
         this.level = 1;
         this.xp = 0;
@@ -166,8 +171,20 @@ export class Ant {
         if (input.right) dx += 1;
 
         let targetSpeed = 0;
+        let isSprinting = input.shift && this.stamina > 0;
+
         if (dx !== 0 || dy !== 0) {
-            targetSpeed = this.maxSpeed * (input.shift ? 1.8 : 1.0);
+            targetSpeed = this.maxSpeed * (isSprinting ? 1.8 : 1.0);
+
+            // Stamina Logic
+            if (isSprinting) {
+                this.stamina -= 0.8; // Drain
+                if (this.stamina <= 0) this.stamina = 0;
+            } else {
+                this.stamina += 0.3; // Regen while moving but not sprinting
+                if (this.stamina > this.maxStamina) this.stamina = this.maxStamina;
+            }
+
             let targetAngle = Math.atan2(dy, dx);
             let diff = targetAngle - this.angle;
             while (diff <= -Math.PI) diff += Math.PI * 2;
@@ -175,8 +192,18 @@ export class Ant {
             this.angle += diff * 0.15;
         } else {
             targetSpeed = 0;
+            // Regen faster when standing still
+            this.stamina += 0.4;
+            if (this.stamina > this.maxStamina) this.stamina = this.maxStamina;
         }
-        this.speed += (targetSpeed - this.speed) * 0.2;
+
+        // Increased friction/deceleration (0.2 -> 0.15 for accel, faster decay for stopping)
+        if (targetSpeed === 0) {
+            this.speed += (targetSpeed - this.speed) * 0.3; // Stop faster (Higher val = faster stop)
+        } else {
+            this.speed += (targetSpeed - this.speed) * 0.1; // Accel slower
+        }
+
         this.vel = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(this.speed);
         this.pos = this.pos.add(this.vel);
 

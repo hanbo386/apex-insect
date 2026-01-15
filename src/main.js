@@ -29,16 +29,23 @@ uiContainer.appendChild(statusText);
 function updateUI() {
     let evoText = ant.evolutionStage > 0 ? `MARK-${ant.evolutionStage}` : "原始种";
     statusText.innerHTML = `<strong>等级:</strong> ${ant.level} | <strong>XP:</strong> ${ant.xp}/${ant.xpToNext} | <strong>形态:</strong> ${evoText}`;
+
+    const staminaFill = document.getElementById('stamina-bar-fill');
+    if (staminaFill) {
+        let pct = (ant.stamina / ant.maxStamina) * 100;
+        staminaFill.style.width = `${pct}%`;
+        staminaFill.style.background = pct < 20 ? '#ff0000' : '#00ff00';
+    }
 }
 
 // Input handling
+const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false, ShiftLeft: false, ShiftRight: false };
 
-const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false, Shift: false };
 window.addEventListener('keydown', e => {
-    if (keys.hasOwnProperty(e.key) || e.key === "Shift") keys[e.key] = true;
+    if (keys.hasOwnProperty(e.code)) keys[e.code] = true;
 });
 window.addEventListener('keyup', e => {
-    if (keys.hasOwnProperty(e.key) || e.key === "Shift") keys[e.key] = false;
+    if (keys.hasOwnProperty(e.code)) keys[e.code] = false;
 });
 // Reset keys on focus loss to prevent stuck inputs
 window.addEventListener('blur', () => {
@@ -100,11 +107,11 @@ function spawnCreeps() {
 
 function gameLoop() {
     let input = {
-        up: keys.w || keys.ArrowUp,
-        down: keys.s || keys.ArrowDown,
-        left: keys.a || keys.ArrowLeft,
-        right: keys.d || keys.ArrowRight,
-        shift: keys.Shift
+        up: keys.KeyW || keys.ArrowUp,
+        down: keys.KeyS || keys.ArrowDown,
+        left: keys.KeyA || keys.ArrowLeft,
+        right: keys.KeyD || keys.ArrowRight,
+        shift: keys.ShiftLeft || keys.ShiftRight
     };
 
     ant.update(input);
