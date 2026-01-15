@@ -110,28 +110,39 @@ function spawnCreeps() {
     let dist = visibleRadius + 100 + Math.random() * 400;
     let spawnPos = player.pos.add(new Vec2(Math.cos(angle), Math.sin(angle)).mult(dist));
 
-    // 进化后，生成竞争对手 (Rival Ant)
-    // 逻辑更新: NPC永远与玩家形态相同
-    // 等级范围: 玩家等级 -2 到 玩家等级 +1
-    if (player.evolutionStage > 0 && Math.random() < 0.4) { // Increased chance slightly to 40%
+    // Weighted Spawning Logic based on Player Stage
+    let r = Math.random();
+    let targetStage;
+
+    if (r < 0.70) {
+        // 70% chance: 1 Stage LOWER
+        targetStage = player.evolutionStage - 1;
+    } else if (r < 0.80) {
+        // 10% chance: 2 Stages LOWER
+        targetStage = player.evolutionStage - 2;
+    } else if (r < 0.95) {
+        // 15% chance: SAME Stage
+        targetStage = player.evolutionStage;
+    } else {
+        // 5% chance: 1 Stage HIGHER
+        targetStage = player.evolutionStage + 1;
+    }
+
+    // If target stage is valid (>= 0), spawn NPC Insect
+    if (targetStage >= 0) {
         let rival = new Insect(spawnPos.x, spawnPos.y);
 
-        let levelDiff = Math.floor(Math.random() * 4) - 2; // -2, -1, 0, 1
-        let targetLevel = Math.max(1, player.level + levelDiff); // 1-5 approx
-        targetLevel = Math.max(1, Math.min(5, targetLevel));
+        // Always Level 1
+        rival.setLevel(targetStage, 1);
 
-        // Set Rival to same stage, comparable level
-        rival.setLevel(player.evolutionStage, targetLevel);
-
-        // Force Stage/Form to match Player (so a Lvl 13 Cockroach is possible if Player is Lvl 15)
-        rival.evolutionStage = player.evolutionStage;
-        rival.evolve(); // Apply visual form
+        // Ensure visual form matches the stage
+        // setLevel might do it, but let's be safe if logic depends on explicit evolve calls
+        // Actually setLevel(stage, 1) in our refactor does loop evolve(), so it handles form.
 
         rival.isRival = true;
         creeps.push(rival);
     } else {
-        // Generate regular food (Creep) if not a rival
-        // Maybe scale food size with player too?
+        // Target stage < 0 (Low level food / Creep)
         let food = new Creep(spawnPos.x, spawnPos.y);
         // Optional: Scale food size slightly for bigger ants
         if (scale < 1.0) food.size *= (1 / scale) * 0.5;
