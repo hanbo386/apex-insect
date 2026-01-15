@@ -4,6 +4,8 @@ import { Environment } from './game/Environment.js';
 import { Vec2 } from './game/Vec2.js';
 import { Creep } from './game/Creep.js';
 import { FloatingText } from './game/FloatingText.js';
+import { Particle } from './game/Particle.js';
+
 
 
 
@@ -63,7 +65,9 @@ let camera = new Vec2(0, 0);
 
 const creeps = [];
 const texts = []; // 浮动文字
+const particles = []; // 粒子效果
 const MAX_CREEPS = 30;
+
 
 function spawnCreeps() {
     // 在蚂蚁周围一定范围内生成
@@ -158,14 +162,35 @@ function gameLoop() {
 
             // Note: XP overhead text removed as requested
 
+            // Debris Particles
+            // Debris Particles
+            let pColor, pSize;
+            if (c.isRival) {
+                pColor = c.colors.thorax;
+                pSize = c.scale * 6; // Ant size approximation
+            } else {
+                pColor = c.color;
+                pSize = c.size;
+            }
+
+            // Spawn particles
+            let count = c.isRival ? 15 : 5; // More for rivals
+            for (let k = 0; k < count; k++) {
+                particles.push(new Particle(c.pos.x, c.pos.y, pColor, pSize));
+            }
+
             creeps.splice(i, 1);
         }
     }
 
-    // Update Texts
+    // Update Texts & Particles
     for (let i = texts.length - 1; i >= 0; i--) {
         texts[i].update();
         if (texts[i].life <= 0) texts.splice(i, 1);
+    }
+    for (let i = particles.length - 1; i >= 0; i--) {
+        particles[i].update();
+        if (particles[i].life <= 0) particles.splice(i, 1);
     }
 
 
@@ -187,8 +212,12 @@ function gameLoop() {
 
     ant.draw(ctx);
 
+    // Draw Particles
+    particles.forEach(p => p.draw(ctx));
+
     // Draw Texts
     texts.forEach(t => t.draw(ctx));
+
 
     ctx.restore();
 
