@@ -96,9 +96,14 @@ const MAX_CREEPS = 30;
 
 
 function spawnCreeps() {
-    // 在蚂蚁周围一定范围内生成
+    // Dynamic Spawn Range based on Zoom
+    let scale = window.gameScale || 1.0;
+    // Calculate visible world radius (approximate)
+    let visibleRadius = Math.max(width, height) / scale / 2;
+
+    // Spawn just outside visible area
     let angle = Math.random() * Math.PI * 2;
-    let dist = 300 + Math.random() * 500; // 300-800 距离
+    let dist = visibleRadius + 100 + Math.random() * 400;
     let spawnPos = ant.pos.add(new Vec2(Math.cos(angle), Math.sin(angle)).mult(dist));
 
     // 进化后，有概率生成竞争对手 (Rival Ant)
@@ -148,8 +153,17 @@ function gameLoop() {
     updateUI();
 
     // Creep Logic
-    if (creeps.length < MAX_CREEPS) {
-        if (Math.random() < 0.05) spawnCreeps();
+    // Dynamic generation count based on zoom
+    // Base: 30. If scale 0.15 => 30 / 0.15 = 200. Cap at 150 to prevent lag.
+    let currentScale = window.gameScale || 1.0;
+
+    // We want density to remain somewhat constant. Area scales with 1/scale^2.
+    // But we don't want 30 * 36 = 1000 creeps. 
+    // Let's scale linearly with view diameter (1/scale).
+    let dynamicLimit = Math.min(150, Math.floor(MAX_CREEPS / currentScale));
+
+    if (creeps.length < dynamicLimit) {
+        if (Math.random() < 0.1) spawnCreeps(); // Increased spawn rate slightly
     }
 
     for (let i = creeps.length - 1; i >= 0; i--) {
@@ -177,14 +191,19 @@ function gameLoop() {
         }
 
         // 距离过远销毁
-        if (c.pos.dist(ant.pos) > 1500) {
+        // Dynamic Despawn Range
+        let scale = window.gameScale || 1.0;
+        let visibleRadius = Math.max(width, height) / scale / 2;
+        // Despawn if further than 2x visible radius (give some buffer)
+        if (c.pos.dist(ant.pos) > visibleRadius * 2.5) {
             creeps.splice(i, 1);
             continue;
         }
 
         // 碰撞/进食检测
         // 蚂蚁是个椭圆，简单用距离判断
-        let eatDist = (10 * ant.scale) + (c.isRival ? 10 * c.scale : c.size);
+        // Increased range: 25 * scale (was 10)
+        let eatDist = (25 * ant.scale) + (c.isRival ? 10 * c.scale : c.size);
 
         if (c.pos.dist(ant.pos) < eatDist) {
             // Eat!
@@ -235,7 +254,7 @@ function gameLoop() {
     // Default 1.0
     let targetZoom = 1.0;
     if (ant.form === 'COCKROACH') {
-        targetZoom = 0.6; // Zoom out
+        targetZoom = 0.15; // Zoom out extremly (was 0.25)
     }
 
     // Smooth zoom
@@ -261,7 +280,7 @@ function gameLoop() {
     // Note: camera is top-left, so we translate opposite
     ctx.translate(-camera.x, -camera.y);
 
-    env.draw(ctx, camera, width, height); // Env might need update if it depends on screen bounds (culling)
+    env.draw(ctx, camera, width, height, window.gameScale); // Pass scale for correct culling/generation
 
     // Draw Creeps
     creeps.forEach(c => c.draw(ctx));
