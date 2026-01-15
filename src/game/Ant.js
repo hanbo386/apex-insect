@@ -214,7 +214,8 @@ export class Ant {
         let isSprinting = input.shift && this.stamina > 0;
 
         if (dx !== 0 || dy !== 0) {
-            targetSpeed = this.maxSpeed * (isSprinting ? 1.8 : 1.0);
+            // Scale speed with size so larger forms don't feel slow when zoomed out
+            targetSpeed = this.maxSpeed * this.scale * (isSprinting ? 1.8 : 1.0);
 
             // Stamina Logic
             if (isSprinting) {
