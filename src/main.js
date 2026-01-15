@@ -1,5 +1,5 @@
 import './style.css';
-import { Ant } from './game/Ant.js';
+import { Insect } from './game/Insect.js';
 import { Environment } from './game/Environment.js';
 import { Vec2 } from './game/Vec2.js';
 import { Creep } from './game/Creep.js';
@@ -35,19 +35,19 @@ function updateUI() {
     // 3: 潮虫 (Pillbug)
     // 4: 蟑螂 (Cockroach)
     let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)"];
-    let displayForm = formNames[ant.evolutionStage] || `MARK-${ant.evolutionStage}`;
+    let displayForm = formNames[player.evolutionStage] || `MARK-${player.evolutionStage}`;
 
     // Relative Level Calculation
     // Level is now ALWAYS 1-5 per stage logic in Ant.js
-    let displayLevel = ant.level;
+    let displayLevel = player.level;
 
-    statusText.innerHTML = `<strong>形态:</strong> ${displayForm} | <strong>等级:</strong> ${displayLevel} / 5 | <strong>XP:</strong> ${Math.floor(ant.xp)}/${Math.floor(ant.xpToNext)}`;
+    statusText.innerHTML = `<strong>形态:</strong> ${displayForm} | <strong>等级:</strong> ${displayLevel} / 5 | <strong>XP:</strong> ${Math.floor(player.xp)}/${Math.floor(player.xpToNext)}`;
 
 
 
     const staminaFill = document.getElementById('stamina-bar-fill');
     if (staminaFill) {
-        let pct = (ant.stamina / ant.maxStamina) * 100;
+        let pct = (player.stamina / player.maxStamina) * 100;
         staminaFill.style.width = `${pct}%`;
         staminaFill.style.background = pct < 20 ? '#ff0000' : '#00ff00';
     }
@@ -72,7 +72,7 @@ document.getElementById('evolve-btn').innerText = "Cheat: Evolve";
 document.getElementById('evolve-btn').addEventListener('click', () => {
     console.log("DEBUG: Cheat Evolve clicked.");
     // Force immediate evolution to next stage
-    ant.evolve();
+    player.evolve();
 
     // Force focus back
     window.focus();
@@ -82,13 +82,13 @@ document.getElementById('evolve-btn').addEventListener('click', () => {
 
 
 // Game Init
-const ant = new Ant(width / 2, height / 2);
-ant.onLevelUp = (lvl) => {
-    texts.push(new FloatingText(ant.pos.x, ant.pos.y - 50, `LEVEL UP! (${lvl})`, '#00ff00', 40));
+const player = new Insect(width / 2, height / 2);
+player.onLevelUp = (lvl) => {
+    texts.push(new FloatingText(player.pos.x, player.pos.y - 50, `LEVEL UP! (${lvl})`, '#00ff00', 40));
 };
-ant.onEvolve = (formName) => {
+player.onEvolve = (formName) => {
     // Large, prominent gold text
-    texts.push(new FloatingText(ant.pos.x, ant.pos.y - 80, `进化成功: ${formName}!`, '#FFD700', 60, 4.0));
+    texts.push(new FloatingText(player.pos.x, player.pos.y - 80, `进化成功: ${formName}!`, '#FFD700', 60, 4.0));
 };
 const env = new Environment();
 let camera = new Vec2(0, 0);
@@ -108,23 +108,23 @@ function spawnCreeps() {
     // Spawn just outside visible area
     let angle = Math.random() * Math.PI * 2;
     let dist = visibleRadius + 100 + Math.random() * 400;
-    let spawnPos = ant.pos.add(new Vec2(Math.cos(angle), Math.sin(angle)).mult(dist));
+    let spawnPos = player.pos.add(new Vec2(Math.cos(angle), Math.sin(angle)).mult(dist));
 
     // 进化后，生成竞争对手 (Rival Ant)
     // 逻辑更新: NPC永远与玩家形态相同
     // 等级范围: 玩家等级 -2 到 玩家等级 +1
-    if (ant.evolutionStage > 0 && Math.random() < 0.4) { // Increased chance slightly to 40%
-        let rival = new Ant(spawnPos.x, spawnPos.y);
+    if (player.evolutionStage > 0 && Math.random() < 0.4) { // Increased chance slightly to 40%
+        let rival = new Insect(spawnPos.x, spawnPos.y);
 
         let levelDiff = Math.floor(Math.random() * 4) - 2; // -2, -1, 0, 1
-        let targetLevel = Math.max(1, ant.level + levelDiff); // 1-5 approx
+        let targetLevel = Math.max(1, player.level + levelDiff); // 1-5 approx
         targetLevel = Math.max(1, Math.min(5, targetLevel));
 
         // Set Rival to same stage, comparable level
-        rival.setLevel(ant.evolutionStage, targetLevel);
+        rival.setLevel(player.evolutionStage, targetLevel);
 
         // Force Stage/Form to match Player (so a Lvl 13 Cockroach is possible if Player is Lvl 15)
-        rival.evolutionStage = ant.evolutionStage;
+        rival.evolutionStage = player.evolutionStage;
         rival.evolve(); // Apply visual form
 
         rival.isRival = true;
@@ -149,7 +149,7 @@ function gameLoop() {
         shift: keys.ShiftLeft || keys.ShiftRight
     };
 
-    ant.update(input);
+    player.update(input);
     updateUI();
 
     // Creep Logic
@@ -195,7 +195,7 @@ function gameLoop() {
         let scale = window.gameScale || 1.0;
         let visibleRadius = Math.max(width, height) / scale / 2;
         // Despawn if further than 2x visible radius (give some buffer)
-        if (c.pos.dist(ant.pos) > visibleRadius * 2.5) {
+        if (c.pos.dist(player.pos) > visibleRadius * 2.5) {
             creeps.splice(i, 1);
             continue;
         }
@@ -203,25 +203,25 @@ function gameLoop() {
         // 碰撞/进食检测
         // 蚂蚁是个椭圆，简单用距离判断
         // Increased range: 25 * scale (was 10)
-        let eatDist = (25 * ant.scale) + (c.isRival ? 10 * c.scale : c.size);
+        let eatDist = (25 * player.scale) + (c.isRival ? 10 * c.scale : c.size);
 
-        if (c.pos.dist(ant.pos) < eatDist) {
+        if (c.pos.dist(player.pos) < eatDist) {
             // Restriction Logic:
             // 1. Stage Comparison First
             if (c.isRival) {
-                if (c.evolutionStage > ant.evolutionStage) {
+                if (c.evolutionStage > player.evolutionStage) {
                     // Enemy Stage is Higher: CANNOT EAT. Bounce.
-                    let pushDir = c.pos.sub(ant.pos).normalize();
+                    let pushDir = c.pos.sub(player.pos).normalize();
                     c.pos = c.pos.add(pushDir.mult(5));
                     continue;
-                } else if (c.evolutionStage < ant.evolutionStage) {
+                } else if (c.evolutionStage < player.evolutionStage) {
                     // Enemy Stage is Lower: EAT.
                     // (Proceed to eat logic below)
                 } else {
                     // Stages are EQUAL: Compare Level
-                    if (c.level > ant.level) {
+                    if (c.level > player.level) {
                         // Enemy Level is Higher: CANNOT EAT. Bounce.
-                        let pushDir = c.pos.sub(ant.pos).normalize();
+                        let pushDir = c.pos.sub(player.pos).normalize();
                         c.pos = c.pos.add(pushDir.mult(5));
                         continue;
                     }
@@ -231,7 +231,7 @@ function gameLoop() {
 
             // Eat!
             let xpGain = c.isRival ? 20 * (c.scale) : (1 + Math.floor(c.size));
-            ant.gainXp(xpGain);
+            player.gainXp(xpGain);
 
             // Note: XP overhead text removed as requested
 
@@ -267,8 +267,8 @@ function gameLoop() {
     }
 
 
-    let targetCamX = ant.pos.x - width / 2;
-    let targetCamY = ant.pos.y - height / 2;
+    let targetCamX = player.pos.x - width / 2;
+    let targetCamY = player.pos.y - height / 2;
     camera.x += (targetCamX - camera.x) * 0.1;
     camera.y += (targetCamY - camera.y) * 0.1;
 
@@ -276,7 +276,7 @@ function gameLoop() {
     // If Cockroach (Stage 3+), target scale is smaller (zoom out)
     // Default 1.0
     let targetZoom = 1.0;
-    if (ant.form === 'COCKROACH') {
+    if (player.form === 'COCKROACH') {
         targetZoom = 0.15; // Zoom out extremly (was 0.25)
     }
 
@@ -308,7 +308,7 @@ function gameLoop() {
     // Draw Creeps
     creeps.forEach(c => c.draw(ctx));
 
-    ant.draw(ctx);
+    player.draw(ctx);
 
     // Draw Particles
     particles.forEach(p => p.draw(ctx));

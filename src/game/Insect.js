@@ -3,9 +3,10 @@ import { Leg } from './Leg.js';
 import { CockroachLeg, CockroachAntenna } from './CockroachParts.js';
 
 /**
- * 蚂蚁主体类
+ * 昆虫主体类 (Insect)
+ * Base class for the player creature and NPCs.
  */
-export class Ant {
+export class Insect {
     constructor(x, y) {
         this.pos = new Vec2(x, y);
         this.vel = new Vec2(0, 0);
@@ -272,6 +273,14 @@ export class Ant {
 
 
     update(input) {
+        // --- Walk Cycle ---
+        if (this.vel.mag() > 0.1) {
+            this.walkCycle += 0.2; // Adjust speed as needed
+        } else {
+            // Decay directly to nearest 0 or just stop
+            // this.walkCycle = 0; // Optional reset
+        }
+
         // --- Smooth Growth ---
         if (Math.abs(this.scale - this.targetScale) > 0.01) {
             this.scale += (this.targetScale - this.scale) * 0.05;
@@ -424,7 +433,14 @@ export class Ant {
         ctx.rotate(this.angle);
         ctx.scale(this.scale, this.scale);
 
-        // Body: Simple oval
+        // Body: Simple oval with wiggle
+        let wiggle = 0;
+        if (this.vel.mag() > 0.1) {
+            wiggle = Math.sin(this.walkCycle) * 0.2; // Wiggle amplitude
+        }
+
+        ctx.rotate(wiggle);
+
         ctx.fillStyle = this.colors.thorax;
         ctx.beginPath();
         ctx.ellipse(0, 0, 6, 8, 0, 0, Math.PI * 2);
