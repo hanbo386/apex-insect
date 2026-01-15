@@ -118,22 +118,24 @@ function spawnCreeps() {
     let dist = visibleRadius + 100 + Math.random() * 400;
     let spawnPos = player.pos.add(new Vec2(Math.cos(angle), Math.sin(angle)).mult(dist));
 
-    // Weighted Spawning Logic based on Player Stage
-    let r = Math.random();
-    let targetStage;
+    // Weighted Spawning Logic
+    // FIX: Maintain constant ratio of Rivals vs Food regardless of player level
+    // 70% Food, 30% Chance for Rival Logic
+    let isFood = Math.random() < 0.70;
+    let targetStage = -1;
 
-    if (r < 0.70) {
-        // 70% chance: 1 Stage LOWER
-        targetStage = player.evolutionStage - 1;
-    } else if (r < 0.80) {
-        // 10% chance: 2 Stages LOWER
-        targetStage = player.evolutionStage - 2;
-    } else if (r < 0.95) {
-        // 15% chance: SAME Stage
-        targetStage = player.evolutionStage;
-    } else {
-        // 5% chance: 1 Stage HIGHER
-        targetStage = player.evolutionStage + 1;
+    if (!isFood) {
+        // Attempt to spawn a Rival
+        let r = Math.random();
+        if (r < 0.70) {
+            targetStage = player.evolutionStage - 1;
+        } else if (r < 0.80) {
+            targetStage = player.evolutionStage - 2;
+        } else if (r < 0.95) {
+            targetStage = player.evolutionStage;
+        } else {
+            targetStage = player.evolutionStage + 1;
+        }
     }
 
     // If target stage is valid (>= 0), spawn NPC Insect
