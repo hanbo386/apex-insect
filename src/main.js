@@ -29,8 +29,21 @@ statusText.id = 'status-display';
 uiContainer.appendChild(statusText);
 
 function updateUI() {
-    let evoText = ant.evolutionStage > 0 ? `MARK-${ant.evolutionStage}` : "原始种";
-    statusText.innerHTML = `<strong>等级:</strong> ${ant.level} | <strong>XP:</strong> ${ant.xp}/${ant.xpToNext} | <strong>形态:</strong> ${evoText}`;
+    // 0: 原始种 (Primitive)
+    // 1: 蚂蚁 (Ant)
+    // 2: 瓢虫 (Ladybug)
+    // 3: 潮虫 (Pillbug)
+    // 4: 蟑螂 (Cockroach)
+    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)"];
+    let displayForm = formNames[ant.evolutionStage] || `MARK-${ant.evolutionStage}`;
+
+    // Relative Level Calculation
+    // Level is now ALWAYS 1-5 per stage logic in Ant.js
+    let displayLevel = ant.level;
+
+    statusText.innerHTML = `<strong>形态:</strong> ${displayForm} | <strong>等级:</strong> ${displayLevel} / 5 | <strong>XP:</strong> ${Math.floor(ant.xp)}/${Math.floor(ant.xpToNext)}`;
+
+
 
     const staminaFill = document.getElementById('stamina-bar-fill');
     if (staminaFill) {
@@ -54,25 +67,16 @@ window.addEventListener('blur', () => {
     Object.keys(keys).forEach(k => keys[k] = false);
 });
 
-// Debug Button
+// Debug Button - Now "Cheat Level Up"
+document.getElementById('evolve-btn').innerText = "Cheat: Evolve";
 document.getElementById('evolve-btn').addEventListener('click', () => {
-    console.log("DEBUG: Evolve button clicked. Current Level:", ant.level);
+    console.log("DEBUG: Cheat Evolve clicked.");
+    // Force immediate evolution to next stage
+    ant.evolve();
 
-    let target = 0;
-    if (ant.level < 5) target = 5;
-    else if (ant.level < 10) target = 10;
-    else if (ant.level < 15) target = 15; // Evolution Stage 3 (Cockroach)
-    else target = ant.level + 1; // Fallback to +1
-
-    console.log("DEBUG: Setting level to:", target);
-    ant.setLevel(target);
-
-    // Manual visual feedback just in case onEvolve is missed
-    console.log("DEBUG: New Level:", ant.level, "Form:", ant.form);
-
-    // Force focus back to game so keys work immediately
+    // Force focus back
     window.focus();
-    document.getElementById('gameCanvas').focus();
+    if (document.getElementById('gameCanvas')) document.getElementById('gameCanvas').focus();
 });
 
 
@@ -92,7 +96,7 @@ let camera = new Vec2(0, 0);
 const creeps = [];
 const texts = []; // 浮动文字
 const particles = []; // 粒子效果
-const MAX_CREEPS = 30;
+const MAX_CREEPS = 15;
 
 
 function spawnCreeps() {
@@ -106,36 +110,32 @@ function spawnCreeps() {
     let dist = visibleRadius + 100 + Math.random() * 400;
     let spawnPos = ant.pos.add(new Vec2(Math.cos(angle), Math.sin(angle)).mult(dist));
 
-    // 进化后，有概率生成竞争对手 (Rival Ant)
-    // 简单起见，Rival 复用 Ant 类，但不受控
-    // 进化后，生成低阶竞争对手
-    if (ant.evolutionStage > 0 && Math.random() < 0.3) {
+    // 进化后，生成竞争对手 (Rival Ant)
+    // 逻辑更新: NPC永远与玩家形态相同
+    // 等级范围: 玩家等级 -2 到 玩家等级 +1
+    if (ant.evolutionStage > 0 && Math.random() < 0.4) { // Increased chance slightly to 40%
         let rival = new Ant(spawnPos.x, spawnPos.y);
 
-        // 逻辑: 比玩家低 1-2 个形态
-        // 形态 0: Lvl 1, 形态 1: Lvl 5, 形态 2: Lvl 10...
-        // 公式: Level = Stage * 5 + 1
+        let levelDiff = Math.floor(Math.random() * 4) - 2; // -2, -1, 0, 1
+        let targetLevel = Math.max(1, ant.level + levelDiff); // 1-5 approx
+        targetLevel = Math.max(1, Math.min(5, targetLevel));
 
-        let diff = 1 + Math.floor(Math.random() * 2); // 1 or 2 stages lower
-        let targetStage = Math.max(0, ant.evolutionStage - diff);
-        let targetLevel = targetStage * 5 + 1;
+        // Set Rival to same stage, comparable level
+        rival.setLevel(ant.evolutionStage, targetLevel);
 
-        rival.setLevel(targetLevel);
+        // Force Stage/Form to match Player (so a Lvl 13 Cockroach is possible if Player is Lvl 15)
+        rival.evolutionStage = ant.evolutionStage;
+        rival.evolve(); // Apply visual form
+
         rival.isRival = true;
-
-        // 如果是同形态（极低概率或不可能），或者是只是低级但同形态，加点颜色区分
-        // 但通常 targetStage < ant.evolutionStage，所以外观应该已经由 evolve() 决定了
-        // 为了区分敌我，还是强制给个"敌对色"或者保留 evolve 的颜色但加深？
-        // 用户的需求是 "新出现的npc应该比玩家的形态低1-2个"，所以如果玩家是红(Stage 1)，NPC是黑(Stage 0)。
-        // Stage 0 默认是黑/棕色。Stage 1 是红色。
-        // 我们只需要确保 .isRival 标记即可，颜色由 setLevel -> evolve 自动处理
-
-        // 为了视觉区分 "Rival" 和普通 Creep，我们可以稍微调整颜色，或者就让它保持自然
-        // 既然是 "竞争对手"，保持自然形态颜色最好。
-
         creeps.push(rival);
     } else {
-        creeps.push(new Creep(spawnPos.x, spawnPos.y));
+        // Generate regular food (Creep) if not a rival
+        // Maybe scale food size with player too?
+        let food = new Creep(spawnPos.x, spawnPos.y);
+        // Optional: Scale food size slightly for bigger ants
+        if (scale < 1.0) food.size *= (1 / scale) * 0.5;
+        creeps.push(food);
     }
 }
 
@@ -160,7 +160,7 @@ function gameLoop() {
     // We want density to remain somewhat constant. Area scales with 1/scale^2.
     // But we don't want 30 * 36 = 1000 creeps. 
     // Let's scale linearly with view diameter (1/scale).
-    let dynamicLimit = Math.min(150, Math.floor(MAX_CREEPS / currentScale));
+    let dynamicLimit = Math.min(75, Math.floor(MAX_CREEPS / currentScale));
 
     if (creeps.length < dynamicLimit) {
         if (Math.random() < 0.1) spawnCreeps(); // Increased spawn rate slightly
@@ -206,6 +206,29 @@ function gameLoop() {
         let eatDist = (25 * ant.scale) + (c.isRival ? 10 * c.scale : c.size);
 
         if (c.pos.dist(ant.pos) < eatDist) {
+            // Restriction Logic:
+            // 1. Stage Comparison First
+            if (c.isRival) {
+                if (c.evolutionStage > ant.evolutionStage) {
+                    // Enemy Stage is Higher: CANNOT EAT. Bounce.
+                    let pushDir = c.pos.sub(ant.pos).normalize();
+                    c.pos = c.pos.add(pushDir.mult(5));
+                    continue;
+                } else if (c.evolutionStage < ant.evolutionStage) {
+                    // Enemy Stage is Lower: EAT.
+                    // (Proceed to eat logic below)
+                } else {
+                    // Stages are EQUAL: Compare Level
+                    if (c.level > ant.level) {
+                        // Enemy Level is Higher: CANNOT EAT. Bounce.
+                        let pushDir = c.pos.sub(ant.pos).normalize();
+                        c.pos = c.pos.add(pushDir.mult(5));
+                        continue;
+                    }
+                    // Else (Level <= Player): EAT.
+                }
+            }
+
             // Eat!
             let xpGain = c.isRival ? 20 * (c.scale) : (1 + Math.floor(c.size));
             ant.gainXp(xpGain);

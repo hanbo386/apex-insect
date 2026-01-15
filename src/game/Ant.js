@@ -11,7 +11,7 @@ export class Ant {
         this.vel = new Vec2(0, 0);
         this.angle = 0;
         this.speed = 0;
-        this.maxSpeed = 3.2;
+        this.maxSpeed = 2.0; // Primitive (Stage 0) is slower
 
         // --- Stamina ---
         this.stamina = 100;
@@ -22,34 +22,32 @@ export class Ant {
         this.level = 1;
         this.xp = 0;
         this.xpToNext = 5; // 升级所需初始 XP
-        this.evolutionStage = 0; // 0: 初始, 1: 进化形态
-        this.scale = 1.0;
-        this.baseScale = 1.0;
-        this.targetScale = 1.0;
+        this.evolutionStage = 0; // 0: Primitive, 1: Ant, 2: Ladybug...
+        this.scale = 0.6; // Primitive starts tiny
+        this.baseScale = 0.6;
+        this.targetScale = 0.6;
 
         this.flashTimer = 0; // Visual effect for leveling up
 
         // 颜色配置
         this.colors = {
-            head: '#4a331c',
-            thorax: '#4a331c',
-            abdomen: '#3d2612',
-            gradStart: '#755430',
-            gradEnd: '#1a1108'
+            head: '#cccccc', // Primitive: Grey/Pale
+            thorax: '#cccccc',
+            abdomen: '#b3b3b3',
+            gradStart: '#e0e0e0',
+            gradEnd: '#999999'
         };
 
         this.thoraxPos = this.pos.clone();
         this.abdomenPos = this.pos.clone();
         this.headPos = this.pos.clone();
 
-
-
         this.legs = [];
         this.initLegs();
         this.gaitState = 0;
 
-        // --- Ladybug Vars ---
-        this.form = 'ANT';
+        // --- Form Vars ---
+        this.form = 'PRIMITIVE';
         this.walkCycle = 0;
         this.antennaTimer = 0;
 
@@ -65,23 +63,40 @@ export class Ant {
 
     initLegs() {
         this.legs = [];
-        // --- 身体尺寸没变，但是为了配合短腿，腿根部位置保持紧凑 ---
-        let legConfigs = [
-            { id: 0, side: -1, x: 5 },  // Left Front
-            { id: 1, side: -1, x: 0 },  // Left Mid
-            { id: 2, side: -1, x: -5 }, // Left Back
-            { id: 3, side: 1, x: 5 },  // Right Front
-            { id: 4, side: 1, x: 0 },  // Right Mid
-            { id: 5, side: 1, x: -5 }  // Right Back
-        ];
 
-        legConfigs.forEach(cfg => {
-            this.legs.push(new Leg(cfg.id, cfg.side, cfg.x, cfg.side * 2.5, this.scale));
-        });
+        // Primitive Legs: Tiny and simple
+        // Stage 0: Primitive (Larva - Mite)
+        // Stage 1: Ant
 
-        legConfigs.forEach(cfg => {
-            this.legs.push(new Leg(cfg.id, cfg.side, cfg.x, cfg.side * 2.5, this.scale));
-        });
+        let legConfigs = [];
+
+        if (this.evolutionStage === 1) { // ANT (Stage 1)
+            legConfigs = [
+                { id: 0, side: -1, x: 5 },
+                { id: 1, side: -1, x: 0 },
+                { id: 2, side: -1, x: -5 },
+                { id: 3, side: 1, x: 5 },
+                { id: 4, side: 1, x: 0 },
+                { id: 5, side: 1, x: -5 }
+            ];
+            legConfigs.forEach(cfg => {
+                this.legs.push(new Leg(cfg.id, cfg.side, cfg.x, cfg.side * 2.5, this.scale));
+            });
+        } else if (this.evolutionStage === 0) { // Primitive (Stage 0)
+            legConfigs = [
+                { id: 0, side: -1, x: 3 },
+                { id: 1, side: -1, x: 0 },
+                { id: 2, side: -1, x: -3 },
+                { id: 3, side: 1, x: 3 },
+                { id: 4, side: 1, x: 0 },
+                { id: 5, side: 1, x: -3 }
+            ];
+            legConfigs.forEach(cfg => {
+                this.legs.push(new Leg(cfg.id, cfg.side, cfg.x, cfg.side * 1.5, this.scale));
+            });
+        }
+        // Higher stages (Ladybug/Pillbug) might not use standard legs or use different logic.
+        // Assuming Ant-like legs are fine for now or handled elsewhere.
 
         this.legs.forEach(leg => {
             leg.currentPos = leg.idealOffset.add(this.pos);
@@ -94,80 +109,142 @@ export class Ant {
 
     gainXp(amount) {
         this.xp += amount;
+
+        // Check for Level Up or Evolution
         if (this.xp >= this.xpToNext) {
-            this.levelUp();
+            if (this.level < 5) {
+                this.levelUp();
+            } else {
+                // Level is 5 (Max for current stage) -> Evolve
+                this.evolve();
+            }
         }
     }
 
     levelUp() {
         this.xp -= this.xpToNext;
         this.level++;
-        this.xpToNext = Math.floor(this.xpToNext * 1.5); // 升级难度增加
+        this.xpToNext = Math.floor(this.xpToNext * 1.5);
+        this.flashTimer = 30;
 
-        // 每次升级体型变大 15%
-        this.baseScale *= 1.15;
+        // Growth
+        this.baseScale *= 1.10;
         this.targetScale = this.baseScale;
 
-        // 重新初始化腿部以适应新尺寸
-        this.initLegs();
-
-        // Trigger Flash Effect
-        this.flashTimer = 30; // 30 frames (~0.5s)
-
-        // 检查进化
-        if (this.level % 5 === 0) {
-            this.evolve();
-        }
+        this.initLegs(); // Re-init legs for size
 
         if (this.onLevelUp) this.onLevelUp(this.level);
     }
 
-    setLevel(targetLevel) {
-        // Reset to base
+    setLevel(targetStage, targetLevel) {
+        // Temporarily disable callbacks
+        let originalOnLevelUp = this.onLevelUp;
+        let originalOnEvolve = this.onEvolve;
+        this.onLevelUp = null;
+        this.onEvolve = null;
+
+        // Reset
+        this.evolutionStage = 0;
         this.level = 1;
         this.xp = 0;
-        this.scale = 1.0;
-        this.baseScale = 1.0;
-        this.targetScale = 1.0;
-        this.evolutionStage = 0;
+        this.scale = 0.6;
+        this.baseScale = 0.6;
+        this.targetScale = 0.6;
+        this.form = 'PRIMITIVE';
+        this.maxSpeed = 2.0;
         this.initLegs();
 
-        // Fast forward to target level
-        for (let i = 1; i < targetLevel; i++) {
-            // Simulate level up without effects
-            this.level++;
-            this.xpToNext = Math.floor(this.xpToNext * 1.5);
-            this.baseScale *= 1.15;
-            this.targetScale = this.baseScale;
-            if (this.level % 5 === 0) {
-                this.evolve();
-            }
+        // 1. Advance Stages
+        while (this.evolutionStage < targetStage) {
+            // Simulate maxing out typical levels for previous stages to get scale right?
+            // Actually, evolve() resets level to 1.
+            // So we just need to call evolve() targetStage times.
+            // But evolve() assumes we just finished previous stage. 
+            // We should simulate the growth of previous stages too?
+            // For simplicity, let's just force the stage.
+            this.evolve();
         }
-        this.scale = this.targetScale;
-        this.legs.forEach(leg => leg.updateScale(this.scale));
+
+        // 2. Advance Levels within current Stage
+        // targetLevel should be 1-5
+        for (let i = 1; i < targetLevel; i++) {
+            this.levelUp();
+        }
+
+        // Restore callbacks
+        this.onLevelUp = originalOnLevelUp;
+        this.onEvolve = originalOnEvolve;
+
+        // Update visual form logic immediately
+        // (evolve() call above set the internal form string, but we might need to refresh legs/visuals)
+        this.initLegs();
     }
 
     evolve() {
         this.evolutionStage++;
+        this.level = 1; // RESET Level to 1
+        this.xp = 0;    // Reset XP
+
+        // Increase difficulty for next stage
+        // Base XP requirement for Level 1 of new stage should be higher
+        this.xpToNext = 5 * Math.pow(2.5, this.evolutionStage);
+        this.xpToNext = Math.floor(this.xpToNext);
+
         let formName = "";
 
-        // 进化改变外观
+        // Evolution Shift Logic
         if (this.evolutionStage === 1) {
+            this.form = 'ANT';
+            this.maxSpeed = 3.2;
+            this.colors = {
+                head: '#4a331c',
+                thorax: '#4a331c',
+                abdomen: '#3d2612',
+                gradStart: '#755430',
+                gradEnd: '#1a1108'
+            };
+            // Re-init legs for Ant size
+            this.initLegs();
+            // Fix legs for Ant manually if needed or update initLegs to handle forms
+            // For now, let's just make initLegs aware of scale which grew? 
+            // Better: Re-define legs forcefully for Ant.
+            this.legs = [];
+            let legConfigs = [
+                { id: 0, side: -1, x: 5 },
+                { id: 1, side: -1, x: 0 },
+                { id: 2, side: -1, x: -5 },
+                { id: 3, side: 1, x: 5 },
+                { id: 4, side: 1, x: 0 },
+                { id: 5, side: 1, x: -5 }
+            ];
+            legConfigs.forEach(cfg => {
+                this.legs.push(new Leg(cfg.id, cfg.side, cfg.x, cfg.side * 2.5, this.scale));
+            });
+            this.legs.forEach(leg => {
+                leg.currentPos = leg.idealOffset.add(this.pos);
+                leg.targetPos = leg.currentPos.clone();
+            });
+
+            formName = "蚂蚁 (ANT)";
+
+        } else if (this.evolutionStage === 2) {
             this.form = 'LADYBUG';
             this.maxSpeed *= 1.2;
             formName = "瓢虫 (LADYBUG)";
-        } else if (this.evolutionStage === 2) {
+        } else if (this.evolutionStage === 3) {
             this.form = 'PILLBUG';
-            this.maxSpeed *= 1.1; // Slightly faster
+            this.maxSpeed *= 1.1;
             this.pillBugSegments = [];
             for (let i = 0; i < 9; i++) {
                 this.pillBugSegments.push({ x: this.pos.x, y: this.pos.y, angle: this.angle });
             }
             formName = "潮虫 (PILLBUG)";
-        } else if (this.evolutionStage === 3) {
+        } else if (this.evolutionStage === 4) {
             this.form = 'COCKROACH';
-            this.maxSpeed *= 1.3; // Much faster
+            this.maxSpeed *= 1.3;
             this.cockroachLegs = [];
+            // ... Cockroach legs (omitted for brevity, handled below or existing)
+            // Just ensure we don't crash. The existing code block for cockroach legs needs to stay.
 
             // Front (Index 0)
             this.cockroachLegs.push(new CockroachLeg(-1, 0, new Vec2(22, -16), 28, 25, this.scale));
@@ -189,6 +266,9 @@ export class Ant {
 
         if (this.onEvolve) this.onEvolve(formName);
     }
+
+    // Manual Evolution Trigger
+
 
 
     update(input) {
@@ -261,6 +341,8 @@ export class Ant {
         let abTarget = this.pos.add(new Vec2(Math.cos(this.angle) * -7 * this.scale, Math.sin(this.angle) * -7 * this.scale));
         this.abdomenPos = this.abdomenPos.add(abTarget.sub(this.abdomenPos).mult(0.4));
 
+        if (this.legs.length < 6) return; // Guard: Logic below assumes 6 legs (0-5)
+
         let groupAMoving = this.legs[0].isMoving || this.legs[4].isMoving || this.legs[2].isMoving;
         let groupBMoving = this.legs[3].isMoving || this.legs[1].isMoving || this.legs[5].isMoving;
 
@@ -300,8 +382,12 @@ export class Ant {
         } else if (this.form === 'COCKROACH') {
             this.drawCockroach(ctx);
             return;
+        } else if (this.form === 'PRIMITIVE') {
+            this.drawPrimitive(ctx);
+            return;
         }
 
+        // Default: Ant Form (or any other fallback)
         this.legs.forEach(leg => {
             let hipWorldPos = leg.offset.rotate(this.angle).add(this.thoraxPos);
             leg.draw(ctx, hipWorldPos);
@@ -329,6 +415,36 @@ export class Ant {
 
         // 大颚
         this.drawMandibles(ctx, this.headPos, this.angle);
+    }
+
+    drawPrimitive(ctx) {
+        // Draw Simple Larva/Mite
+        ctx.save();
+        ctx.translate(this.pos.x, this.pos.y);
+        ctx.rotate(this.angle);
+        ctx.scale(this.scale, this.scale);
+
+        // Body: Simple oval
+        ctx.fillStyle = this.colors.thorax;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 6, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Head: Small circle
+        ctx.fillStyle = this.colors.head;
+        ctx.beginPath();
+        ctx.arc(0, -6, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Little legs (nubbins)
+        ctx.fillStyle = '#666';
+        let legOffset = [-3, 0, 3];
+        legOffset.forEach(y => {
+            ctx.beginPath(); ctx.arc(-5, y, 1.5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(5, y, 1.5, 0, Math.PI * 2); ctx.fill();
+        });
+
+        ctx.restore();
     }
 
     drawSegment(ctx, pos, w, h, angle, color) {
