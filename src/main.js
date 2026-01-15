@@ -294,12 +294,17 @@ function gameLoop() {
     camera.y += (targetCamY - camera.y) * 0.1;
 
     // --- Dynamic Zoom ---
-    // If Cockroach (Stage 3+), target scale is smaller (zoom out)
-    // Default 1.0
-    let targetZoom = 1.0;
-    if (player.form === 'COCKROACH') {
-        targetZoom = 0.15; // Zoom out extremly (was 0.25)
-    }
+    // Maintain Player Size below 20% of screen min dimension
+    // Visual Radius approx = scale * 50 (based on rough rendering sizes)
+    // Target: (scale * 50 * zoom) < (minDim * 0.20)
+    // => zoom < (minDim * 0.20) / (scale * 50)
+
+    let minDimension = Math.min(width, height);
+    let visualSize = player.scale * 60; // Estimated visual radius
+    let desiredZoom = (minDimension * 0.10) / visualSize; // Allow up to 10% screen coverage before zooming
+
+    // Clamp zoom: Max 1.0 (Normal), Min 0.1 (Max Zoom Out)
+    let targetZoom = Math.max(0.1, Math.min(1.0, desiredZoom));
 
     // Smooth zoom
     if (!window.gameScale) window.gameScale = 1.0;
