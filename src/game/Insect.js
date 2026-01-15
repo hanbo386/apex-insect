@@ -433,32 +433,66 @@ export class Insect {
         ctx.rotate(this.angle);
         ctx.scale(this.scale, this.scale);
 
-        // Body: Simple oval with wiggle
-        let wiggle = 0;
-        if (this.vel.mag() > 0.1) {
-            wiggle = Math.sin(this.walkCycle) * 0.2; // Wiggle amplitude
-        }
+        // Head: Small circle (Fixed at front: +X)
+        let headX = 6;
 
-        ctx.rotate(wiggle);
+        // Head Wiggle (minimal Y sway)
+        let headWiggle = 0;
+        if (this.vel.mag() > 0.1) headWiggle = Math.sin(this.walkCycle) * 1;
 
-        ctx.fillStyle = this.colors.thorax;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, 6, 8, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Head: Small circle
         ctx.fillStyle = this.colors.head;
         ctx.beginPath();
-        ctx.arc(0, -6, 4, 0, Math.PI * 2);
+        ctx.arc(headX, headWiggle, 4, 0, Math.PI * 2);
         ctx.fill();
 
-        // Little legs (nubbins)
-        ctx.fillStyle = '#666';
-        let legOffset = [-3, 0, 3];
-        legOffset.forEach(y => {
-            ctx.beginPath(); ctx.arc(-5, y, 1.5, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(5, y, 1.5, 0, Math.PI * 2); ctx.fill();
-        });
+        // Eyes on Head (Front facing)
+        ctx.fillStyle = '#000';
+        // Top eye (-Y), Bottom eye (+Y)
+        ctx.beginPath(); ctx.arc(headX + 2, headWiggle - 2, 1, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(headX + 2, headWiggle + 2, 1, 0, Math.PI * 2); ctx.fill();
+
+
+        // Segments (Body)
+        // Level 1 = 1 Segment. Level 5 = 5 Segments.
+        // Drawn from front (0) to back (level-1) along -X
+
+        ctx.fillStyle = this.colors.thorax;
+
+        for (let i = 0; i < this.level; i++) {
+            let spacing = 6;
+            let currentX = 0 - (i * spacing);
+
+            // Wiggle Logic: Snake wave (Y axis)
+            let wiggle = 0;
+            if (this.vel.mag() > 0.1) {
+                // Phase shift for wave effect
+                wiggle = Math.sin(this.walkCycle - (i * 0.8)) * (2 + i * 0.5);
+            }
+
+            // Tapering size
+            // Width (X) and Height (Y). Since we are horizontal, X is length, Y is thickness.
+            let rLength = 8 * (1 - i * 0.05); // Length along body axis
+            let rThickness = 6 * (1 - i * 0.05); // Thickness
+            // Clamp min size
+            rLength = Math.max(4, rLength);
+            rThickness = Math.max(3, rThickness);
+
+            ctx.beginPath();
+            ctx.ellipse(currentX, wiggle, rLength, rThickness, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Legs on segments (First 3 only)
+            if (i < 3) {
+                ctx.fillStyle = '#666';
+                let legY = rThickness - 1;
+                // Left (Top in this orientation? -Y)
+                ctx.beginPath(); ctx.arc(currentX, wiggle - legY - 2, 1.5, 0, Math.PI * 2); ctx.fill();
+                // Right (Bottom in this orientation? +Y)
+                ctx.beginPath(); ctx.arc(currentX, wiggle + legY + 2, 1.5, 0, Math.PI * 2); ctx.fill();
+
+                ctx.fillStyle = this.colors.thorax;
+            }
+        }
 
         ctx.restore();
     }
