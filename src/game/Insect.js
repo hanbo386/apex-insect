@@ -1,6 +1,7 @@
 import { Vec2 } from './Vec2.js';
 import { Leg } from './Leg.js';
 import { CockroachLeg, CockroachAntenna } from './CockroachParts.js';
+import { SpiderLeg, SPIDER_CONFIG } from './SpiderParts.js';
 
 /**
  * 昆虫主体类 (Insect)
@@ -60,6 +61,11 @@ export class Insect {
         this.leftCockroachAntenna = null;
         this.rightCockroachAntenna = null;
         this.gaitClock = 0;
+
+        // --- Spider Vars ---
+        this.spiderLegs = [];
+        this.stepGroup = 0;
+        this.lastStepChange = 0;
     }
 
     initLegs() {
@@ -278,6 +284,19 @@ export class Insect {
             this.rightCockroachAntenna = new CockroachAntenna(130, 12, 1, this.scale);
 
             formName = "蟑螂 (COCKROACH)";
+        } else if (this.evolutionStage === 5) {
+            this.form = 'SPIDER';
+            this.maxSpeed *= 1.2; // Fast
+
+            this.spiderLegs = [];
+            // Init 8 legs (4 pairs)
+            // Left (-1)
+            for (let i = 0; i < 4; i++) {
+                this.spiderLegs.push(new SpiderLeg(this, i, -1, this.scale));
+                this.spiderLegs.push(new SpiderLeg(this, i, 1, this.scale));
+            }
+
+            formName = "细脚长腿蛛 (SPIDER)";
         }
 
         if (this.onEvolve) this.onEvolve(formName);
@@ -301,6 +320,10 @@ export class Insect {
             this.scale += (this.targetScale - this.scale) * 0.05;
             // Update legs scale without resetting them
             this.legs.forEach(leg => leg.updateScale(this.scale));
+            this.cockroachLegs.forEach(leg => leg.updateScale(this.scale));
+            if (this.leftCockroachAntenna) this.leftCockroachAntenna.updateScale(this.scale);
+            if (this.rightCockroachAntenna) this.rightCockroachAntenna.updateScale(this.scale);
+            this.spiderLegs.forEach(leg => leg.updateScale(this.scale));
         } else {
             this.scale = this.targetScale;
         }
@@ -405,6 +428,9 @@ export class Insect {
             return;
         } else if (this.form === 'COCKROACH') {
             this.drawCockroach(ctx);
+            return;
+        } else if (this.form === 'SPIDER') {
+            this.drawSpider(ctx);
             return;
         } else if (this.form === 'PRIMITIVE') {
             this.drawPrimitive(ctx);
@@ -977,7 +1003,12 @@ export class Insect {
                 } else {
                     leg.update(this.pos, this.angle, this.vel, false);
                 }
+
             });
+            return;
+        } else if (this.form === 'SPIDER') {
+            // Logic is now driven by legs calling toggleGait()
+            this.spiderLegs.forEach(leg => leg.update());
             return;
         }
 
@@ -989,6 +1020,8 @@ export class Insect {
 
         let abTarget = this.pos.add(new Vec2(Math.cos(this.angle) * -7 * this.scale, Math.sin(this.angle) * -7 * this.scale));
         this.abdomenPos = this.abdomenPos.add(abTarget.sub(this.abdomenPos).mult(0.4));
+
+        if (this.legs.length < 6) return; // Guard: Logic below assumes 6 standard legs
 
         let groupAMoving = this.legs[0].isMoving || this.legs[4].isMoving || this.legs[2].isMoving;
         let groupBMoving = this.legs[3].isMoving || this.legs[1].isMoving || this.legs[5].isMoving;
@@ -1102,5 +1135,68 @@ export class Insect {
         ctx.stroke();
 
         ctx.restore();
+    }
+
+    drawSpider(ctx) {
+        // Shadow pass
+        ctx.save();
+        ctx.translate(5 * this.scale, 5 * this.scale);
+        ctx.globalAlpha = 0.1;
+        this.drawSpiderBody(ctx, true);
+        ctx.restore();
+
+        // Legs
+        this.spiderLegs.forEach(leg => leg.draw(ctx));
+
+        // Body
+        this.drawSpiderBody(ctx, false);
+    }
+
+    drawSpiderBody(ctx, isShadow) {
+        const bodyColor = isShadow ? '#000' : '#5d4037';
+        const abdomenColor = isShadow ? '#000' : '#8d6e63';
+
+        const bodySize = 8 * this.scale; // From config roughly
+        const abdomenSize = 12 * this.scale;
+
+        ctx.save();
+        ctx.translate(this.pos.x, this.pos.y);
+        ctx.rotate(this.angle);
+
+        // Breathing effect
+        const breathe = Math.sin(Date.now() / 200) * 1.5 * this.scale;
+
+        // Abdomen (Long/Oval) - Offset slightly back
+        ctx.beginPath();
+        // ellipses: x, y, radiusX, radiusY, rotation...
+        ctx.ellipse(-bodySize - (2 * this.scale), breathe * 0.5, abdomenSize, bodySize * 0.8, 0, 0, Math.PI * 2);
+        ctx.fillStyle = abdomenColor;
+        ctx.fill();
+
+        // Thorax
+        ctx.beginPath();
+        ctx.arc(0, 0, bodySize, 0, Math.PI * 2);
+        ctx.fillStyle = bodyColor;
+        ctx.fill();
+
+        // Eyes
+        if (!isShadow) {
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(4 * this.scale, -2 * this.scale, 1.5 * this.scale, 0, Math.PI * 2);
+            ctx.arc(4 * this.scale, 2 * this.scale, 1.5 * this.scale, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+
+    toggleGait() {
+        // Debounce toggle to prevent rapid flickering
+        const now = Date.now();
+        if (now - this.lastStepChange > 100) {
+            this.stepGroup = (this.stepGroup + 1) % 2;
+            this.lastStepChange = now;
+        }
     }
 }
