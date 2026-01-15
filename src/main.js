@@ -34,7 +34,9 @@ function updateUI() {
     // 2: 瓢虫 (Ladybug)
     // 3: 潮虫 (Pillbug)
     // 4: 蟑螂 (Cockroach)
-    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)"];
+    // 5: 蜘蛛 (Spider)
+    // 6: 螳螂 (Mantis)
+    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)", "蜘蛛 (Spider)", "螳螂 (Mantis)"];
     let displayForm = formNames[player.evolutionStage] || `MARK-${player.evolutionStage}`;
 
     // Relative Level Calculation

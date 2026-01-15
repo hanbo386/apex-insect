@@ -2,6 +2,7 @@ import { Vec2 } from './Vec2.js';
 import { Leg } from './Leg.js';
 import { CockroachLeg, CockroachAntenna } from './CockroachParts.js';
 import { SpiderLeg, SPIDER_CONFIG } from './SpiderParts.js';
+import { MantisLeg } from './MantisParts.js';
 
 /**
  * 昆虫主体类 (Insect)
@@ -81,7 +82,29 @@ export class Insect {
 
         // Primitive Legs: Tiny and simple
         // Stage 0: Primitive (Larva - Mite)
+        // Stage 0: Primitive (Larva - Mite)
         // Stage 1: Ant
+
+        if (this.form === 'MANTIS') {
+            this.mantisLegs = [
+                // Back Legs
+                new MantisLeg(-1, -45, 12, 40, 50),
+                new MantisLeg(1, -45, 12, 40, 50),
+                // Mid Legs
+                new MantisLeg(-1, 0, 15, 25, 35),
+                new MantisLeg(1, 0, 15, 25, 35),
+                // Front Arms (Scythes)
+                new MantisLeg(-1, 20, 10, 30, 40, true),
+                new MantisLeg(1, 20, 10, 30, 40, true)
+            ];
+            // Init feet positions to current pos
+            this.mantisLegs.forEach(l => {
+                l.footX = this.pos.x;
+                l.footY = this.pos.y;
+                l.updateScale(this.scale);
+            });
+            return;
+        }
 
         let legConfigs = [];
 
@@ -305,6 +328,14 @@ export class Insect {
             }
 
             formName = "细脚长腿蛛 (SPIDER)";
+        } else if (this.evolutionStage === 6) {
+            this.form = 'MANTIS';
+            this.maxSpeed = 3.5;
+            this.scale = this.baseScale * 1.2; // Extra size
+
+            this.initLegs();
+
+            formName = "螳螂 (MANTIS)";
         }
 
         if (this.onEvolve) this.onEvolve(formName);
@@ -444,6 +475,9 @@ export class Insect {
             return;
         } else if (this.form === 'SPIDER') {
             this.drawSpider(ctx);
+            return;
+        } else if (this.form === 'MANTIS') {
+            this.drawMantis(ctx);
             return;
         } else if (this.form === 'PRIMITIVE') {
             this.drawPrimitive(ctx);
@@ -1026,6 +1060,29 @@ export class Insect {
             // Logic is now driven by legs calling toggleGait()
             this.spiderLegs.forEach(leg => leg.update());
             return;
+        } else if (this.form === 'MANTIS') {
+            this.animTimer += 0.1;
+
+            // Turn logic for animation (Approximated since we don't have deltaAngle from input directly)
+            // Use angular velocity or change in angle?
+            // We can approximate turnAmount by (currentAngle - prevAngle)
+            // But prevAngle isn't stored explicitly every frame in a way reliable for this?
+            // Actually `this.angle` changes in `update`.
+            // Let's rely on `this.vel` or just simple swaying for now?
+            // User code used `deltaAngle`.
+            // Let's just sway based on movement.
+
+            const sway = Math.sin(this.animTimer) * 0.1;
+            // A simple turn tilt if we wanted (optional)
+
+            this.abdomenAngle = this.abdomenAngle * 0.9 + sway * 0.1; // Simple lerp
+            // this.headAngle ... 
+
+            this.mantisLegs.forEach(leg => {
+                leg.updateScale(this.scale);
+                leg.update(this.pos.x, this.pos.y, this.angle, this.vel.mag());
+            });
+            return;
         }
 
         this.thoraxPos = this.pos;
@@ -1051,6 +1108,131 @@ export class Insect {
             else canMove = canGroupBMove;
             leg.update(this.thoraxPos, this.angle, this.vel, canMove);
         });
+    }
+
+    drawMantis(ctx) {
+        // 1. Shadows
+        ctx.save();
+        ctx.translate(this.pos.x + 5 * this.scale, this.pos.y + 5 * this.scale);
+        ctx.rotate(this.angle);
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        ctx.beginPath();
+        // Width 40*s, Height 15*s
+        ctx.ellipse(-10 * this.scale, 0, 40 * this.scale, 15 * this.scale, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // 2. Legs (Under body)
+        this.mantisLegs.forEach(leg => leg.draw(ctx));
+
+        // 3. Body
+        ctx.save();
+        ctx.translate(this.pos.x + this.lungeOffset.x, this.pos.y + this.lungeOffset.y);
+        ctx.rotate(this.angle);
+
+        const s = this.scale;
+
+        // --- Abdomen ---
+        ctx.save();
+        ctx.translate(-25 * s, 0);
+        ctx.rotate(this.abdomenAngle);
+
+        // Main
+        ctx.fillStyle = '#6DA04B';
+        ctx.beginPath();
+        ctx.ellipse(-30 * s, 0, 45 * s, 18 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Lines
+        ctx.strokeStyle = '#558238';
+        ctx.lineWidth = 2 * s;
+        for (let i = 0; i < 4; i++) {
+            ctx.beginPath();
+            ctx.moveTo((-15 - i * 12) * s, (-15 + i * 2) * s);
+            ctx.quadraticCurveTo((-15 - i * 12 - 5) * s, 0, (-15 - i * 12) * s, (15 - i * 2) * s);
+            ctx.stroke();
+        }
+
+        // Wings
+        ctx.fillStyle = 'rgba(128, 168, 108, 0.6)';
+        ctx.beginPath();
+        ctx.moveTo(-10 * s, -8 * s);
+        ctx.lineTo(-70 * s, -2 * s);
+        ctx.lineTo(-10 * s, 8 * s);
+        ctx.fill();
+
+        ctx.restore();
+
+        // --- Thorax ---
+        ctx.fillStyle = '#7CAF54';
+        ctx.beginPath();
+        ctx.moveTo(-25 * s, -6 * s);
+        ctx.lineTo(25 * s, -4 * s);
+        ctx.lineTo(25 * s, 4 * s);
+        ctx.lineTo(-25 * s, 6 * s);
+        ctx.fill();
+
+        // Midline
+        ctx.strokeStyle = '#5D8A40';
+        ctx.lineWidth = 1 * s;
+        ctx.beginPath();
+        ctx.moveTo(-25 * s, 0);
+        ctx.lineTo(25 * s, 0);
+        ctx.stroke();
+
+        // --- Head ---
+        ctx.save();
+        ctx.translate(25 * s, 0);
+        ctx.rotate(this.headAngle);
+
+        // Triangle Head
+        ctx.fillStyle = '#8BC34A';
+        ctx.beginPath();
+        ctx.moveTo(0, -8 * s);
+        ctx.lineTo(12 * s, 0);
+        ctx.lineTo(0, 8 * s);
+        ctx.lineTo(-4 * s, 0);
+        ctx.fill();
+
+        // Eyes
+        // Left
+        ctx.fillStyle = '#E1F5C4';
+        ctx.beginPath();
+        ctx.ellipse(2 * s, -8 * s, 4 * s, 6 * s, -0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'black'; // Pupil
+        ctx.beginPath();
+        ctx.arc(3 * s, -8 * s, 1.5 * s, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Right
+        ctx.fillStyle = '#E1F5C4';
+        ctx.beginPath();
+        ctx.ellipse(2 * s, 8 * s, 4 * s, 6 * s, 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'black';
+        ctx.beginPath();
+        ctx.arc(3 * s, 8 * s, 1.5 * s, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Antennae
+        ctx.strokeStyle = '#4a3b22';
+        ctx.lineWidth = 0.5 * s;
+
+        // Left
+        ctx.beginPath();
+        ctx.moveTo(12 * s, -2 * s);
+        ctx.quadraticCurveTo((25 + Math.sin(this.animTimer * 2) * 5) * s, -15 * s, 35 * s, -20 * s);
+        ctx.stroke();
+
+        // Right
+        ctx.beginPath();
+        ctx.moveTo(12 * s, 2 * s);
+        ctx.quadraticCurveTo((25 + Math.cos(this.animTimer * 2) * 5) * s, 15 * s, 35 * s, 20 * s);
+        ctx.stroke();
+
+        ctx.restore(); // End Head
+        ctx.restore(); // End Body
     }
 
     drawCockroach(ctx) {
