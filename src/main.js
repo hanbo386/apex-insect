@@ -61,6 +61,7 @@ document.getElementById('evolve-btn').addEventListener('click', () => {
     let target = 0;
     if (ant.level < 5) target = 5;
     else if (ant.level < 10) target = 10;
+    else if (ant.level < 15) target = 15; // Evolution Stage 3 (Cockroach)
     else target = ant.level + 1; // Fallback to +1
 
     console.log("DEBUG: Setting level to:", target);
@@ -229,13 +230,38 @@ function gameLoop() {
     camera.x += (targetCamX - camera.x) * 0.1;
     camera.y += (targetCamY - camera.y) * 0.1;
 
+    // --- Dynamic Zoom ---
+    // If Cockroach (Stage 3+), target scale is smaller (zoom out)
+    // Default 1.0
+    let targetZoom = 1.0;
+    if (ant.form === 'COCKROACH') {
+        targetZoom = 0.6; // Zoom out
+    }
+
+    // Smooth zoom
+    if (!window.gameScale) window.gameScale = 1.0;
+    window.gameScale += (targetZoom - window.gameScale) * 0.02;
+
+
     ctx.fillStyle = '#e6dcc3';
     ctx.fillRect(0, 0, width, height);
 
-    env.draw(ctx, camera, width, height);
+    // Draw Environment with scale? 
+    // Environment.draw usually handles its own or world coords. 
+    // To scale everything correctly, we should apply scale to the context transformation
 
     ctx.save();
+
+    // Center of screen
+    ctx.translate(width / 2, height / 2);
+    ctx.scale(window.gameScale, window.gameScale);
+    ctx.translate(-width / 2, -height / 2);
+
+    // Existing camera translation
+    // Note: camera is top-left, so we translate opposite
     ctx.translate(-camera.x, -camera.y);
+
+    env.draw(ctx, camera, width, height); // Env might need update if it depends on screen bounds (culling)
 
     // Draw Creeps
     creeps.forEach(c => c.draw(ctx));
@@ -247,6 +273,8 @@ function gameLoop() {
 
     // Draw Texts
     texts.forEach(t => t.draw(ctx));
+
+    ctx.restore();
 
 
     ctx.restore();

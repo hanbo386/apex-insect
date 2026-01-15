@@ -23,24 +23,49 @@ export class Environment {
         }
     }
 
-    draw(ctx, camera, width, height) {
+    draw(ctx, camera, width, height, scale = 1.0) {
         ctx.save();
-        ctx.translate(-camera.x, -camera.y);
+        // Remove internal camera translation because main.js already handles it!
+        // ctx.translate(-camera.x, -camera.y);
 
         let pattern = ctx.createPattern(this.groundCanvas, 'repeat');
         ctx.fillStyle = pattern;
-        ctx.fillRect(camera.x, camera.y, width, height);
+
+        // Calculate visible world bounds based on scale
+        // Camera (top-left) in main.js is derived from simple offset, 
+        // but with scaling around center, "camera" variable might effectively point 
+        // to the top-left of the unscaled viewport projected to world.
+        // It's safer to just cover a huge area around the camera center.
+
+        let centerX = camera.x + width / 2;
+        let centerY = camera.y + height / 2;
+
+        let viewW = width / scale;
+        let viewH = height / scale;
+
+        // Add some padding to be safe
+        let drawX = centerX - viewW / 2 - 100;
+        let drawY = centerY - viewH / 2 - 100;
+        let drawW = viewW + 200;
+        let drawH = viewH + 200;
+
+        // Since pattern repeats, we just need to fill the rect in world space
+        ctx.fillRect(drawX, drawY, drawW, drawH);
 
         // 绘制装饰物
         // 计算当前中心位置（基于摄像机中心）
-        let centerX = camera.x + width / 2;
-        let centerY = camera.y + height / 2;
+        // Use the same center for generation
 
         let cx = Math.floor(centerX / 500) * 500;
         let cy = Math.floor(centerY / 500) * 500;
 
-        for (let i = -1; i <= 1; i++) {
-            for (let j = -1; j <= 1; j++) {
+        // Increase range if zoomed out?
+        // At 0.6 scale, 1 screen is ~1.6x larger. 3x3 grid (1500px) might still cover it if screen is < 1000.
+        // If screen is 1920, 1920/0.6 = 3200. We need more grid cells!
+        let range = Math.ceil((viewW / 2) / 500) + 1;
+
+        for (let i = -range; i <= range; i++) {
+            for (let j = -range; j <= range; j++) {
                 let seedX = cx + i * 500;
                 let seedY = cy + j * 500;
                 this.pseudoRandomDecor(ctx, seedX, seedY);

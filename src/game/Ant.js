@@ -1,5 +1,6 @@
 import { Vec2 } from './Vec2.js';
 import { Leg } from './Leg.js';
+import { CockroachLeg, CockroachAntenna } from './CockroachParts.js';
 
 /**
  * 蚂蚁主体类
@@ -54,6 +55,12 @@ export class Ant {
 
         // --- Pill Bug Vars ---
         this.pillBugSegments = [];
+
+        // --- Cockroach Vars ---
+        this.cockroachLegs = [];
+        this.leftCockroachAntenna = null;
+        this.rightCockroachAntenna = null;
+        this.gaitClock = 0;
     }
 
     initLegs() {
@@ -157,6 +164,27 @@ export class Ant {
                 this.pillBugSegments.push({ x: this.pos.x, y: this.pos.y, angle: this.angle });
             }
             formName = "潮虫 (PILLBUG)";
+        } else if (this.evolutionStage === 3) {
+            this.form = 'COCKROACH';
+            this.maxSpeed *= 1.3; // Much faster
+            this.cockroachLegs = [];
+
+            // Front (Index 0)
+            this.cockroachLegs.push(new CockroachLeg(-1, 0, new Vec2(22, -16), 28, 25, this.scale));
+            this.cockroachLegs.push(new CockroachLeg(1, 0, new Vec2(22, 16), 28, 25, this.scale));
+
+            // Mid (Index 1)
+            this.cockroachLegs.push(new CockroachLeg(-1, 1, new Vec2(5, -22), 40, 30, this.scale));
+            this.cockroachLegs.push(new CockroachLeg(1, 1, new Vec2(5, 22), 40, 30, this.scale));
+
+            // Back (Index 2)
+            this.cockroachLegs.push(new CockroachLeg(-1, 2, new Vec2(-15, -20), 48, 35, this.scale));
+            this.cockroachLegs.push(new CockroachLeg(1, 2, new Vec2(-15, 20), 48, 35, this.scale));
+
+            this.leftCockroachAntenna = new CockroachAntenna(130, 12, -1, this.scale);
+            this.rightCockroachAntenna = new CockroachAntenna(130, 12, 1, this.scale);
+
+            formName = "蟑螂 (COCKROACH)";
         }
 
         if (this.onEvolve) this.onEvolve(formName);
@@ -267,6 +295,9 @@ export class Ant {
             return;
         } else if (this.form === 'PILLBUG') {
             this.drawPillBug(ctx);
+            return;
+        } else if (this.form === 'COCKROACH') {
+            this.drawCockroach(ctx);
             return;
         }
 
@@ -732,6 +763,40 @@ export class Ant {
                 current.angle = angleToPrev;
             }
             return;
+        } else if (this.form === 'COCKROACH') {
+            // Update Antennae
+            let headPos = this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(35 * this.scale));
+            if (this.leftCockroachAntenna) {
+                this.leftCockroachAntenna.updateScale(this.scale);
+                this.leftCockroachAntenna.update(headPos, this.angle, this.vel);
+            }
+            if (this.rightCockroachAntenna) {
+                this.rightCockroachAntenna.updateScale(this.scale);
+                this.rightCockroachAntenna.update(headPos, this.angle, this.vel);
+            }
+
+            // Update Legs
+            let speedMag = this.vel.mag();
+            this.gaitClock += speedMag * 0.15;
+            let groupA_CanStep = Math.sin(this.gaitClock) > 0;
+
+            if (this.cockroachLegs.length === 0) return; // safety
+
+            this.cockroachLegs.forEach((leg, i) => {
+                leg.updateScale(this.scale);
+                // Indices: 0(FL), 1(FR), 2(ML), 3(MR), 4(BL), 5(BR)
+                // Tripod A: 0, 3, 4 (FL, MR, BL)
+                // Tripod B: 1, 2, 5 (FR, ML, BR)
+                let isGroupA = (i === 0 || i === 3 || i === 4);
+                let allowed = (isGroupA && groupA_CanStep) || (!isGroupA && !groupA_CanStep);
+
+                if (speedMag > 0.5) {
+                    if (allowed) leg.update(this.pos, this.angle, this.vel);
+                } else {
+                    leg.update(this.pos, this.angle, this.vel, false);
+                }
+            });
+            return;
         }
 
         this.thoraxPos = this.pos;
@@ -755,5 +820,105 @@ export class Ant {
             else canMove = canGroupBMove;
             leg.update(this.thoraxPos, this.angle, this.vel, canMove);
         });
+    }
+
+    drawCockroach(ctx) {
+        // Draw Legs
+        this.cockroachLegs.forEach(leg => leg.draw(ctx, this.pos, this.angle));
+
+        // Draw Antennae
+        if (this.leftCockroachAntenna) this.leftCockroachAntenna.draw(ctx);
+        if (this.rightCockroachAntenna) this.rightCockroachAntenna.draw(ctx);
+
+        ctx.save();
+        ctx.translate(this.pos.x, this.pos.y);
+        ctx.rotate(this.angle);
+
+        // Shadow (Wider)
+        ctx.fillStyle = "rgba(0,0,0,0.3)";
+        ctx.beginPath();
+        // Width 42 * scale, Height 26 * scale
+        ctx.ellipse(0, 0, 42 * this.scale, 26 * this.scale, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 1. Abdomen (Body) - Wider and Larger
+        let abdomenGradient = ctx.createRadialGradient(-10 * this.scale, -5 * this.scale, 0, 0, 0, 55 * this.scale);
+        abdomenGradient.addColorStop(0, "#3E2723");
+        abdomenGradient.addColorStop(0.6, "#1a0f0a");
+        abdomenGradient.addColorStop(1, "#050201");
+
+        ctx.fillStyle = abdomenGradient;
+        ctx.beginPath();
+        // 修正：从 (20,0) 开始，加宽控制点 Y 到 +/- 28 (原18)，延伸尾部到 -70 (原-50)
+        let s = this.scale;
+        ctx.moveTo(25 * s, 0);
+        ctx.bezierCurveTo(25 * s, 28 * s, -55 * s, 25 * s, -70 * s, 0);
+        ctx.bezierCurveTo(-55 * s, -25 * s, 25 * s, -28 * s, 25 * s, 0);
+        ctx.fill();
+
+        // Segment lines
+        ctx.strokeStyle = "rgba(0,0,0,0.4)";
+        ctx.lineWidth = 1 * s;
+        for (let i = -50; i < 10; i += 12) {
+            ctx.beginPath();
+            ctx.moveTo(i * s, -18 * s);
+            ctx.quadraticCurveTo((i - 8) * s, 0, i * s, 18 * s);
+            ctx.stroke();
+        }
+
+        // 2. Wings (Folded)
+        ctx.fillStyle = "rgba(160, 82, 45, 0.7)";
+        ctx.beginPath();
+        ctx.moveTo(28 * s, 0);
+        ctx.quadraticCurveTo(25 * s, 26 * s, -75 * s, 10 * s);
+        ctx.lineTo(-75 * s, -10 * s);
+        ctx.quadraticCurveTo(25 * s, -26 * s, 28 * s, 0);
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
+        ctx.beginPath();
+        ctx.ellipse(-15 * s, 8 * s, 25 * s, 8 * s, -0.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = "rgba(100, 50, 20, 0.3)";
+        ctx.lineWidth = 0.5 * s;
+        ctx.beginPath();
+        ctx.moveTo(28 * s, 0);
+        ctx.quadraticCurveTo(0, 15 * s, -70 * s, 8 * s);
+        ctx.stroke();
+
+        // 3. Pronotum (前胸背板)
+        let pronotumGrad = ctx.createRadialGradient(25 * s, -2 * s, 0, 25 * s, 0, 15 * s);
+        pronotumGrad.addColorStop(0, "#5d4037");
+        pronotumGrad.addColorStop(0.5, "#2d1e18");
+        pronotumGrad.addColorStop(1, "#0f0500");
+
+        ctx.fillStyle = pronotumGrad;
+        ctx.beginPath();
+        ctx.ellipse(25 * s, 0, 14 * s, 16 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+        ctx.beginPath();
+        ctx.ellipse(25 * s, -5 * s, 6 * s, 4 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 4. Head (Hidden mostly)
+        ctx.fillStyle = "#0f0500";
+        ctx.beginPath();
+        ctx.ellipse(38 * s, 0, 5 * s, 7 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Cerci
+        ctx.strokeStyle = "#2d1e18";
+        ctx.lineWidth = 2 * s;
+        ctx.beginPath();
+        ctx.moveTo(-65 * s, 6 * s);
+        ctx.lineTo(-75 * s, 10 * s);
+        ctx.moveTo(-65 * s, -6 * s);
+        ctx.lineTo(-75 * s, -10 * s);
+        ctx.stroke();
+
+        ctx.restore();
     }
 }

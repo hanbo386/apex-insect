@@ -18,4 +18,6 @@ export class Vec2 {
         return new Vec2(this.x * cos - this.y * sin, this.x * sin + this.y * cos);
     }
     clone() { return new Vec2(this.x, this.y); }
+    copy() { return this.clone(); }
+    dot(v) { return this.x * v.x + this.y * v.y; }
 }
