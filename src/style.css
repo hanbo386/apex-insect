@@ -39,6 +39,8 @@ canvas {
     display: flex;
     align-items: center;
     gap: 15px;
+    pointer-events: auto;
+    /* Enable clicks on children */
 }
 
 h1 {
@@ -79,4 +81,35 @@ p {
     background: #00ff00;
     /* Green */
     transition: width 0.1s linear;
+}
+
+.debug-btn {
+    background: #333;
+    /* Dark Grey Background */
+    border: 2px solid #fff;
+    /* White Border */
+    color: #fff;
+    /* White Text */
+    padding: 10px 15px;
+    /* Larger hit area */
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    font-family: inherit;
+    font-size: 14px;
+    transition: all 0.2s;
+    margin-top: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.debug-btn:hover {
+    background: #555;
+    transform: scale(1.05);
+    border-color: #ffd700;
+    /* Gold border on hover */
+    color: #ffd700;
+}
+
+.debug-btn:active {
+    transform: scale(0.95);
 }

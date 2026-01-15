@@ -51,6 +51,9 @@ export class Ant {
         this.form = 'ANT';
         this.walkCycle = 0;
         this.antennaTimer = 0;
+
+        // --- Pill Bug Vars ---
+        this.pillBugSegments = [];
     }
 
     initLegs() {
@@ -147,8 +150,13 @@ export class Ant {
             this.maxSpeed *= 1.2;
             formName = "瓢虫 (LADYBUG)";
         } else if (this.evolutionStage === 2) {
-            // Future forms...
-            formName = "未知 (UNKNOWN)";
+            this.form = 'PILLBUG';
+            this.maxSpeed *= 1.1; // Slightly faster
+            this.pillBugSegments = [];
+            for (let i = 0; i < 9; i++) {
+                this.pillBugSegments.push({ x: this.pos.x, y: this.pos.y, angle: this.angle });
+            }
+            formName = "潮虫 (PILLBUG)";
         }
 
         if (this.onEvolve) this.onEvolve(formName);
@@ -209,17 +217,11 @@ export class Ant {
         }
 
         this.vel = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(this.speed);
+        this.vel = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(this.speed);
         this.pos = this.pos.add(this.vel);
 
-        // --- Update Animations ---
-        if (this.form === 'LADYBUG') {
-            // 步态速度随移动速度变化
-            if (this.speed > 0.1) {
-                this.walkCycle += 0.1 * (this.speed / this.maxSpeed);
-            }
-            this.antennaTimer += 0.05;
-            return; // Skip Ant specific IK update
-        }
+        this.updateVisuals();
+
 
         this.thoraxPos = this.pos;
 
@@ -262,6 +264,9 @@ export class Ant {
 
         if (this.form === 'LADYBUG') {
             this.drawLadybug(ctx);
+            return;
+        } else if (this.form === 'PILLBUG') {
+            this.drawPillBug(ctx);
             return;
         }
 
@@ -545,5 +550,210 @@ export class Ant {
             baseX * 3 + twitchR * 10, baseY - 5 * this.scale + Math.abs(this.speed) * 2
         );
         ctx.stroke();
+    }
+
+    // --- Pill Bug Specific Drawing Logic ---
+    drawPillBug(ctx) {
+        // Shadow (unified)
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.4)';
+        ctx.shadowBlur = 12;
+        ctx.shadowOffsetX = 5;
+        ctx.shadowOffsetY = 5;
+
+        // Draw Legs first (under body)
+        this.drawPillBugLegs(ctx);
+
+        ctx.restore(); // Restore shadow settings for body
+
+        // Draw Segments (Tail to Head)
+        for (let i = this.pillBugSegments.length - 1; i >= 0; i--) {
+            const s = this.pillBugSegments[i];
+            const radius = this.getPillBugSegmentRadius(i);
+            const isHead = i === 0;
+            const isTail = i === this.pillBugSegments.length - 1;
+
+            ctx.save();
+            ctx.translate(s.x, s.y);
+            ctx.rotate(s.angle);
+
+            const baseColor = '#4A5568'; // Slate
+            const highlightColor = '#718096';
+
+            ctx.beginPath();
+
+            if (isHead) {
+                ctx.fillStyle = '#2D3748';
+                ctx.ellipse(4 * this.scale, 0, radius * 0.9, radius, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Eyes
+                ctx.fillStyle = '#111';
+                ctx.beginPath(); ctx.arc(10 * this.scale, -radius * 0.6, 2.5 * this.scale, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(10 * this.scale, radius * 0.6, 2.5 * this.scale, 0, Math.PI * 2); ctx.fill();
+
+                this.drawPillBugAntennae(ctx, radius);
+
+            } else if (isTail) {
+                ctx.fillStyle = baseColor;
+                ctx.ellipse(-2 * this.scale, 0, radius, radius * 0.8, 0, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                ctx.fillStyle = baseColor;
+                ctx.ellipse(0, 0, radius * 0.65, radius, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+                ctx.stroke();
+
+                ctx.fillStyle = highlightColor;
+                ctx.beginPath();
+                ctx.ellipse(-2 * this.scale, 0, radius * 0.25, radius * 0.7, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+    }
+
+    drawPillBugLegs(ctx) {
+        ctx.strokeStyle = '#2D3748';
+        ctx.lineWidth = 3 * this.scale;
+        ctx.lineCap = 'round';
+
+        for (let i = 1; i < this.pillBugSegments.length - 1; i++) {
+            const s = this.pillBugSegments[i];
+            const radius = this.getPillBugSegmentRadius(i);
+
+            const legOffset = i * 0.8;
+            const swing = Math.sin(this.walkCycle + legOffset) * (this.speed > 0.1 ? 1 : 0);
+
+            ctx.save();
+            ctx.translate(s.x, s.y);
+            ctx.rotate(s.angle);
+
+            // Left Leg
+            ctx.beginPath();
+            ctx.moveTo(0, -radius * 0.8);
+
+            let kneeX = (-2 + swing * 5) * this.scale;
+            let kneeY = -radius * 1.5;
+            let footX = (-6 + swing * 8) * this.scale;
+            let footY = -radius * 1.9 + Math.abs(swing) * 4 * this.scale;
+
+            ctx.quadraticCurveTo(kneeX, kneeY, footX, footY);
+            ctx.stroke();
+
+            // Right Leg
+            ctx.beginPath();
+            ctx.moveTo(0, radius * 0.8);
+            ctx.quadraticCurveTo(kneeX, -kneeY, footX, -footY);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+    }
+
+    drawPillBugAntennae(ctx, headRadius) {
+        ctx.strokeStyle = '#2D3748';
+        ctx.lineWidth = 2 * this.scale;
+
+        const twitch = Math.sin(Date.now() / 150) * 0.15;
+
+        // Left
+        ctx.beginPath();
+        ctx.moveTo(8 * this.scale, -headRadius * 0.4);
+        ctx.lineTo(20 * this.scale, -headRadius * 0.8);
+        ctx.lineTo((30 + twitch * 10) * this.scale, -headRadius * 1.2);
+        ctx.stroke();
+
+        // Right
+        ctx.beginPath();
+        ctx.moveTo(8 * this.scale, headRadius * 0.4);
+        ctx.lineTo(20 * this.scale, headRadius * 0.8);
+        ctx.lineTo((30 - twitch * 10) * this.scale, headRadius * 1.2);
+        ctx.stroke();
+    }
+
+    getPillBugSegmentRadius(index) {
+        const scales = [0.8, 0.92, 1.0, 1.0, 0.98, 0.92, 0.85, 0.75, 0.6];
+        const s = scales[index] !== undefined ? scales[index] : 0.8;
+        return 10 * this.scale * s; // Reduced to 10 (Half size)
+    }
+
+    updateVisuals() {
+        // --- Update Animations ---
+        if (this.form === 'LADYBUG') {
+            // 步态速度随移动速度变化
+            if (this.speed > 0.1) {
+                this.walkCycle += 0.1 * (this.speed / this.maxSpeed);
+            }
+            this.antennaTimer += 0.05;
+            return; // Skip Ant specific IK update
+        } else if (this.form === 'PILLBUG') {
+            if (this.speed > 0.1) {
+                this.walkCycle += this.speed * 0.2;
+            }
+
+            // Update Head Segment
+            if (this.pillBugSegments.length === 0) {
+                // Init if missing (sanity check)
+                for (let i = 0; i < 9; i++) this.pillBugSegments.push({ x: this.pos.x, y: this.pos.y, angle: this.angle });
+            }
+            let head = this.pillBugSegments[0];
+            head.x = this.pos.x;
+            head.y = this.pos.y;
+            head.angle = this.angle;
+
+            // IK for body segments
+            let spacing = 12 * this.scale; // Keep spacing relative to scale, maybe reduce spacing too? 
+            // If size is halved, spacing should probably be halved too? 
+            // Original: 12. Let's try 6.
+            spacing = 6 * this.scale;
+
+            for (let i = 1; i < this.pillBugSegments.length; i++) {
+                const current = this.pillBugSegments[i];
+                const prev = this.pillBugSegments[i - 1];
+
+                const dx = prev.x - current.x;
+                const dy = prev.y - current.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const angleToPrev = Math.atan2(dy, dx);
+
+                const currentSpacing = i === 1 ? spacing : spacing * 0.9;
+
+                // Simple lerp for smooth following
+                let targetX = prev.x - Math.cos(angleToPrev) * currentSpacing;
+                let targetY = prev.y - Math.sin(angleToPrev) * currentSpacing;
+
+                current.x += (targetX - current.x) * 0.5;
+                current.y += (targetY - current.y) * 0.5;
+                current.angle = angleToPrev;
+            }
+            return;
+        }
+
+        this.thoraxPos = this.pos;
+
+        // --- 身体跟随 ---
+        let headTarget = this.pos.add(new Vec2(Math.cos(this.angle) * 5.5 * this.scale, Math.sin(this.angle) * 5.5 * this.scale));
+        this.headPos = this.headPos.add(headTarget.sub(this.headPos).mult(0.5));
+
+        let abTarget = this.pos.add(new Vec2(Math.cos(this.angle) * -7 * this.scale, Math.sin(this.angle) * -7 * this.scale));
+        this.abdomenPos = this.abdomenPos.add(abTarget.sub(this.abdomenPos).mult(0.4));
+
+        let groupAMoving = this.legs[0].isMoving || this.legs[4].isMoving || this.legs[2].isMoving;
+        let groupBMoving = this.legs[3].isMoving || this.legs[1].isMoving || this.legs[5].isMoving;
+
+        let canGroupAMove = !groupBMoving;
+        let canGroupBMove = !groupAMoving;
+
+        this.legs.forEach(leg => {
+            let canMove = false;
+            if ([0, 4, 2].includes(leg.id)) canMove = canGroupAMove;
+            else canMove = canGroupBMove;
+            leg.update(this.thoraxPos, this.angle, this.vel, canMove);
+        });
     }
 }

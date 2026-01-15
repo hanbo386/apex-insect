@@ -54,6 +54,27 @@ window.addEventListener('blur', () => {
     Object.keys(keys).forEach(k => keys[k] = false);
 });
 
+// Debug Button
+document.getElementById('evolve-btn').addEventListener('click', () => {
+    console.log("DEBUG: Evolve button clicked. Current Level:", ant.level);
+
+    let target = 0;
+    if (ant.level < 5) target = 5;
+    else if (ant.level < 10) target = 10;
+    else target = ant.level + 1; // Fallback to +1
+
+    console.log("DEBUG: Setting level to:", target);
+    ant.setLevel(target);
+
+    // Manual visual feedback just in case onEvolve is missed
+    console.log("DEBUG: New Level:", ant.level, "Form:", ant.form);
+
+    // Force focus back to game so keys work immediately
+    window.focus();
+    document.getElementById('gameCanvas').focus();
+});
+
+
 
 // Game Init
 const ant = new Ant(width / 2, height / 2);
@@ -138,6 +159,11 @@ function gameLoop() {
             c.angle += (Math.random() - 0.5) * 0.2;
             c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(1.5);
             c.pos = c.pos.add(c.vel);
+
+            // Sync speed for animation
+            c.speed = 1.5;
+            c.updateVisuals();
+
 
             // Update body parts
             c.thoraxPos = c.pos;
