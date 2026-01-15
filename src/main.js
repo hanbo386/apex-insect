@@ -22,20 +22,6 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// Manual Zoom Control
-let manualZoom = null;
-window.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    if (manualZoom === null) manualZoom = window.gameScale || 1.0;
-
-    // Zoom direction
-    const delta = -Math.sign(e.deltaY) * 0.1;
-    manualZoom += delta;
-
-    // Clamp
-    manualZoom = Math.max(0.1, Math.min(3.0, manualZoom));
-}, { passive: false });
-
 // UI Elements
 const uiContainer = document.getElementById('status-container');
 const statusText = document.createElement('span'); // Use span for inline
@@ -137,7 +123,7 @@ let camera = new Vec2(0, 0);
 const creeps = [];
 const texts = []; // 浮动文字
 const particles = []; // 粒子效果
-const MAX_CREEPS = 15;
+const MAX_CREEPS = 4;
 
 function createParticles(x, y, color, size = 4, count = 8) {
     for (let k = 0; k < count; k++) {
@@ -233,9 +219,12 @@ function gameLoop() {
     let currentScale = window.gameScale || 1.0;
 
     // We want density to remain somewhat constant. Area scales with 1/scale^2.
-    // But we don't want 30 * 36 = 1000 creeps. 
-    // Let's scale linearly with view diameter (1/scale).
-    let dynamicLimit = Math.min(75, Math.floor(MAX_CREEPS / currentScale));
+    // However, linear scaling (1/scale) explodes at low zoom (Spider).
+    // Use sqrt scaling for a softer curve, and cap absolute max.
+    // At scale 0.1 (Spider): 8 / 0.1 = 80 (Too many).
+    // 8 / sqrt(0.1) = 8 / 0.31 = 25 (Better).
+    // Let's also hard cap it to avoid performance issues.
+    let dynamicLimit = Math.min(15, Math.floor(MAX_CREEPS / Math.sqrt(currentScale)));
 
     if (creeps.length < dynamicLimit) {
         if (Math.random() < 0.1) spawnCreeps(); // Increased spawn rate slightly
@@ -313,39 +302,25 @@ function gameLoop() {
 
             // Eat!
             // Eat!
-            if (player.form === 'SPIDER') {
-                // Transfer creep to player for animation
-                if (player.startPredation(c, (pos) => {
-                    // Callback when eaten
-                    let xpGain = c.isRival ? 20 * (c.scale) : (1 + Math.floor(c.size));
-                    player.gainXp(xpGain);
-                    if (pos) {
-                        // Juicy particles!
-                        let pSize = (c.size || 5) * (c.scale || 1) * 1.5;
-                        let pCount = 15;
-                        createParticles(pos.x, pos.y, c.color, pSize, pCount);
-                    }
-                })) {
-                    // Remove from world immediately (it's now "held" by spider)
-                    creeps.splice(i, 1);
+            // Unified Predation Logic (Spider & Generic)
+            // Attempt to start predation animation
+            if (player.startPredation(c, (pos) => {
+                // Callback when eat logic triggers (Apex of lunge or Mouth reach)
+                let xpGain = c.isRival ? 20 * (c.scale) : (1 + Math.floor(c.size));
+                player.gainXp(xpGain);
+                if (pos) {
+                    // Juicy particles at the bite location
+                    let pSize = (c.size || 5) * (c.scale || 1) * 1.5;
+                    let pCount = 15;
+                    createParticles(pos.x, pos.y, c.color, pSize, pCount);
                 }
-                // If busy, do nothing (don't eat yet)
-                continue;
+            })) {
+                // Animation started successfully.
+                // Remove creep from world immediately.
+                // For spider, it's visually held. For lunge, it's abstractly "doomed" or we could hide it?
+                // For lunge, simple splice is fine, it disappears and then particles appear at apex.
+                creeps.splice(i, 1);
             }
-
-            let xpGain = c.isRival ? 20 * (c.scale) : (1 + Math.floor(c.size));
-            player.gainXp(xpGain);
-
-            // Visual & Animation
-            // createParticles is handled below for non-spider? 
-            // Wait, the original code had createParticles later?
-            // Let's check context.
-            // Original line 259 was "// Debris Particles".
-            // So we should just let it fall through or duplicate particle logic here and continue.
-            // The original loop continues after eating.
-
-            createParticles(c.pos.x, c.pos.y, c.color);
-            creeps.splice(i, 1);
             continue;
         }
     }
@@ -383,12 +358,9 @@ function gameLoop() {
     // Clamp zoom: Max 1.0 (Normal), Min 0.1 (Max Zoom Out)
     let autoTargetZoom = Math.max(0.1, Math.min(1.0, desiredZoom));
 
-    // Use manual zoom if set, otherwise auto
-    let targetZoom = manualZoom !== null ? manualZoom : autoTargetZoom;
-
     // Smooth zoom
     if (!window.gameScale) window.gameScale = 1.0;
-    window.gameScale += (targetZoom - window.gameScale) * 0.1;
+    window.gameScale += (autoTargetZoom - window.gameScale) * 0.1;
 
 
     ctx.fillStyle = '#e6dcc3';

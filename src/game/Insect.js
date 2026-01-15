@@ -70,6 +70,10 @@ export class Insect {
         this.predationState = 'idle'; // idle, reaching, retracting
         this.predationTimer = 0;
         this.onConsumePrey = null; // Callback for particles
+
+        // Generic Predation (Lunge)
+        this.lungeTimer = 0;
+        this.lungeOffset = new Vec2(0, 0);
     }
 
     initLegs() {
@@ -931,6 +935,9 @@ export class Insect {
     }
 
     updateVisuals() {
+        // ALWAYS run predation logic (Spiders reach, others lunge)
+        this.updatePredation();
+
         // --- Update Animations ---
         if (this.form === 'LADYBUG') {
             // 步态速度随移动速度变化
@@ -950,8 +957,8 @@ export class Insect {
                 for (let i = 0; i < 9; i++) this.pillBugSegments.push({ x: this.pos.x, y: this.pos.y, angle: this.angle });
             }
             let head = this.pillBugSegments[0];
-            head.x = this.pos.x;
-            head.y = this.pos.y;
+            head.x = this.pos.x + this.lungeOffset.x;
+            head.y = this.pos.y + this.lungeOffset.y;
             head.angle = this.angle;
 
             // IK for body segments
@@ -982,7 +989,7 @@ export class Insect {
             return;
         } else if (this.form === 'COCKROACH') {
             // Update Antennae
-            let headPos = this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(35 * this.scale));
+            let headPos = this.pos.add(this.lungeOffset).add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(35 * this.scale));
             if (this.leftCockroachAntenna) {
                 this.leftCockroachAntenna.updateScale(this.scale);
                 this.leftCockroachAntenna.update(headPos, this.angle, this.vel);
@@ -1017,7 +1024,6 @@ export class Insect {
             return;
         } else if (this.form === 'SPIDER') {
             // Logic is now driven by legs calling toggleGait()
-            this.updatePredation();
             this.spiderLegs.forEach(leg => leg.update());
             return;
         }
@@ -1056,7 +1062,7 @@ export class Insect {
         if (this.rightCockroachAntenna) this.rightCockroachAntenna.draw(ctx);
 
         ctx.save();
-        ctx.translate(this.pos.x, this.pos.y);
+        ctx.translate(this.pos.x + this.lungeOffset.x, this.pos.y + this.lungeOffset.y);
         ctx.rotate(this.angle);
 
         // Shadow (Wider)
@@ -1212,7 +1218,6 @@ export class Insect {
     }
 
     startPredation(prey, consumeCallback) {
-        if (this.form !== 'SPIDER' || this.spiderLegs.length < 2) return false;
         if (this.predationState !== 'idle') return false; // Busy
 
         this.heldPrey = {
@@ -1221,14 +1226,20 @@ export class Insect {
             size: (prey.size || 5) * (prey.scale || 1)
         };
         this.onConsumePrey = consumeCallback;
-        this.predationState = 'reaching';
         this.predationTimer = 0;
 
-        // Front legs reach out
-        const frontLeft = this.spiderLegs[0];
-        const frontRight = this.spiderLegs[1];
-        frontLeft.overrideTarget = this.heldPrey.pos;
-        frontRight.overrideTarget = this.heldPrey.pos;
+        if (this.form === 'SPIDER' && this.spiderLegs.length >= 2) {
+            this.predationState = 'reaching';
+            // Front legs reach out
+            const frontLeft = this.spiderLegs[0];
+            const frontRight = this.spiderLegs[1];
+            frontLeft.overrideTarget = this.heldPrey.pos;
+            frontRight.overrideTarget = this.heldPrey.pos;
+        } else {
+            // Generic Lunge
+            this.predationState = 'lunging';
+            this.lungeTimer = 10; // 10 Frames total lunge
+        }
 
         return true;
     }
@@ -1236,6 +1247,40 @@ export class Insect {
     updatePredation() {
         if (this.predationState === 'idle') return;
 
+        // --- Generic Lunge ---
+        if (this.predationState === 'lunging') {
+            this.lungeTimer--;
+
+            // Apex at timer = 5 (Starts at 10)
+            let progress = 0;
+            if (this.lungeTimer >= 5) {
+                // Outward: 10 -> 5 maps to 0 -> 1
+                progress = (10 - this.lungeTimer) / 5;
+            } else {
+                // Inward: 5 -> 0 maps to 1 -> 0
+                progress = this.lungeTimer / 5;
+            }
+
+            // Calc Offset (Forward vector * scale * amount)
+            let lungeDist = 15 * this.scale;
+            this.lungeOffset = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(lungeDist * progress);
+
+            // Trigger Eat at Apex
+            if (this.lungeTimer === 5) {
+                if (this.onConsumePrey) {
+                    this.onConsumePrey(this.headPos.clone().add(this.lungeOffset));
+                    this.onConsumePrey = null; // Done
+                }
+            }
+
+            if (this.lungeTimer <= 0) {
+                this.predationState = 'idle';
+                this.lungeOffset = new Vec2(0, 0);
+            }
+            return;
+        }
+
+        // --- Spider Logic ---
         const frontLeft = this.spiderLegs[0];
         const frontRight = this.spiderLegs[1];
 
