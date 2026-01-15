@@ -69,8 +69,8 @@ export class SpiderLeg {
             this.targetPos.x = this.overrideTarget.x;
             this.targetPos.y = this.overrideTarget.y;
             // Simple ease towards target
-            this.currentPos.x = lerp(this.currentPos.x, this.targetPos.x, 0.25);
-            this.currentPos.y = lerp(this.currentPos.y, this.targetPos.y, 0.25);
+            this.currentPos.x = lerp(this.currentPos.x, this.targetPos.x, 0.1);
+            this.currentPos.y = lerp(this.currentPos.y, this.targetPos.y, 0.1);
             return;
         }
 

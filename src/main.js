@@ -22,6 +22,20 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
+// Manual Zoom Control
+let manualZoom = null;
+window.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (manualZoom === null) manualZoom = window.gameScale || 1.0;
+
+    // Zoom direction
+    const delta = -Math.sign(e.deltaY) * 0.1;
+    manualZoom += delta;
+
+    // Clamp
+    manualZoom = Math.max(0.1, Math.min(3.0, manualZoom));
+}, { passive: false });
+
 // UI Elements
 const uiContainer = document.getElementById('status-container');
 const statusText = document.createElement('span'); // Use span for inline
@@ -97,7 +111,26 @@ player.onLevelUp = (lvl) => {
 player.onEvolve = (formName) => {
     // Large, prominent gold text
     texts.push(new FloatingText(player.pos.x, player.pos.y - 80, `进化成功: ${formName}!`, '#FFD700', 60, 4.0));
+
+    // Cleanup obsolete creeps immediately
+    cleanupCreeps();
 };
+
+function cleanupCreeps() {
+    // Remove any creep (Insect) that is too low stage
+    for (let i = creeps.length - 1; i >= 0; i--) {
+        let c = creeps[i];
+        // Treat undefined stage (basic Creep/Food) as -1
+        let stage = c.evolutionStage !== undefined ? c.evolutionStage : -1;
+
+        if (stage < player.evolutionStage - 2) {
+            // console.log("Evolve Cleanup: Removing stage", stage);
+            createParticles(c.pos.x, c.pos.y, c.color || '#999', (c.size || 5), 5); // Poof effect
+            creeps.splice(i, 1);
+        }
+    }
+    console.log("Cleanup complete. Active creeps:", creeps.length);
+}
 const env = new Environment();
 let camera = new Vec2(0, 0);
 
@@ -106,6 +139,13 @@ const texts = []; // 浮动文字
 const particles = []; // 粒子效果
 const MAX_CREEPS = 15;
 
+function createParticles(x, y, color, size = 4, count = 8) {
+    for (let k = 0; k < count; k++) {
+        // Vary size slightly
+        let s = size * (0.5 + Math.random());
+        particles.push(new Particle(x, y, color, s));
+    }
+}
 
 function spawnCreeps() {
     // Dynamic Spawn Range based on Zoom
@@ -143,20 +183,34 @@ function spawnCreeps() {
         let rival = new Insect(spawnPos.x, spawnPos.y);
 
         // Always Level 1
-        rival.setLevel(targetStage, 1);
+        try {
+            rival.setLevel(targetStage, 1);
+        } catch (err) {
+            console.error("Error setting level:", err);
+            return; // Skip spawn
+        }
 
-        // Ensure visual form matches the stage
-        // setLevel might do it, but let's be safe if logic depends on explicit evolve calls
-        // Actually setLevel(stage, 1) in our refactor does loop evolve(), so it handles form.
+        // DOUBLE CHECK: Ensure we didn't spawn a weakling due to bug
+        if (rival.evolutionStage < player.evolutionStage - 2) {
+            console.warn(`Spawn Logic attempted to spawn Stage ${rival.evolutionStage} (Target: ${targetStage}) when Player is ${player.evolutionStage}. Aborting.`);
+            return;
+        }
 
         rival.isRival = true;
         creeps.push(rival);
     } else {
         // Target stage < 0 (Low level food / Creep)
-        let food = new Creep(spawnPos.x, spawnPos.y);
-        // Optional: Scale food size slightly for bigger ants
-        if (scale < 1.0) food.size *= (1 / scale) * 0.5;
-        creeps.push(food);
+        // Only spawn food if player is still low level (Stage 0 or 1)
+        // If player is Stage 2 (Ladybug), -1 (Food) is < 2 - 2 (0)? No. 0 is threshold.
+        // Wait, rule is "Lower than Player - 2".
+        // If Player 2. Threshold 0. Food (-1) < 0. YES. Food should stop at Stage 2.
+
+        if (player.evolutionStage < 2) {
+            let food = new Creep(spawnPos.x, spawnPos.y);
+            // Optional: Scale food size slightly for bigger ants
+            if (scale < 1.0) food.size *= (1 / scale) * 0.5;
+            creeps.push(food);
+        }
     }
 }
 
@@ -221,6 +275,15 @@ function gameLoop() {
             continue;
         }
 
+        // Despawn if too weak (Old stage creeps)
+        // Keep world clean of low level trash
+        // Treat undefined (Food) as -1
+        let stage = c.evolutionStage !== undefined ? c.evolutionStage : -1;
+        if (stage < player.evolutionStage - 2) {
+            creeps.splice(i, 1);
+            continue;
+        }
+
         // 碰撞/进食检测
         let eatDist = player.getEatRange() + (c.isRival ? 10 * c.scale : c.size);
 
@@ -249,31 +312,41 @@ function gameLoop() {
             }
 
             // Eat!
+            // Eat!
+            if (player.form === 'SPIDER') {
+                // Transfer creep to player for animation
+                if (player.startPredation(c, (pos) => {
+                    // Callback when eaten
+                    let xpGain = c.isRival ? 20 * (c.scale) : (1 + Math.floor(c.size));
+                    player.gainXp(xpGain);
+                    if (pos) {
+                        // Juicy particles!
+                        let pSize = (c.size || 5) * (c.scale || 1) * 1.5;
+                        let pCount = 15;
+                        createParticles(pos.x, pos.y, c.color, pSize, pCount);
+                    }
+                })) {
+                    // Remove from world immediately (it's now "held" by spider)
+                    creeps.splice(i, 1);
+                }
+                // If busy, do nothing (don't eat yet)
+                continue;
+            }
+
             let xpGain = c.isRival ? 20 * (c.scale) : (1 + Math.floor(c.size));
             player.gainXp(xpGain);
+
             // Visual & Animation
-            player.onEat(c.pos);
+            // createParticles is handled below for non-spider? 
+            // Wait, the original code had createParticles later?
+            // Let's check context.
+            // Original line 259 was "// Debris Particles".
+            // So we should just let it fall through or duplicate particle logic here and continue.
+            // The original loop continues after eating.
 
-            // Note: XP overhead text removed as requested
-
-            // Debris Particles
-            // Debris Particles
-            let pColor, pSize;
-            if (c.isRival) {
-                pColor = c.colors.thorax;
-                pSize = c.scale * 6; // Ant size approximation
-            } else {
-                pColor = c.color;
-                pSize = c.size;
-            }
-
-            // Spawn particles
-            let count = c.isRival ? 15 : 5; // More for rivals
-            for (let k = 0; k < count; k++) {
-                particles.push(new Particle(c.pos.x, c.pos.y, pColor, pSize));
-            }
-
+            createParticles(c.pos.x, c.pos.y, c.color);
             creeps.splice(i, 1);
+            continue;
         }
     }
 
@@ -300,15 +373,22 @@ function gameLoop() {
     // => zoom < (minDim * 0.20) / (scale * 50)
 
     let minDimension = Math.min(width, height);
-    let visualSize = player.scale * 60; // Estimated visual radius
+    let baseRadius = 60;
+    if (player.form === 'COCKROACH') baseRadius = 140; // Legs + Antennae
+    if (player.form === 'SPIDER') baseRadius = 240; // Very long legs (120*2 diameter approx)
+
+    let visualSize = player.scale * baseRadius;
     let desiredZoom = (minDimension * 0.10) / visualSize; // Allow up to 10% screen coverage before zooming
 
     // Clamp zoom: Max 1.0 (Normal), Min 0.1 (Max Zoom Out)
-    let targetZoom = Math.max(0.1, Math.min(1.0, desiredZoom));
+    let autoTargetZoom = Math.max(0.1, Math.min(1.0, desiredZoom));
+
+    // Use manual zoom if set, otherwise auto
+    let targetZoom = manualZoom !== null ? manualZoom : autoTargetZoom;
 
     // Smooth zoom
     if (!window.gameScale) window.gameScale = 1.0;
-    window.gameScale += (targetZoom - window.gameScale) * 0.02;
+    window.gameScale += (targetZoom - window.gameScale) * 0.1;
 
 
     ctx.fillStyle = '#e6dcc3';

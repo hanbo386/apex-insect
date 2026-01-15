@@ -66,6 +66,10 @@ export class Insect {
         this.spiderLegs = [];
         this.stepGroup = 0;
         this.lastStepChange = 0;
+        this.heldPrey = null;
+        this.predationState = 'idle'; // idle, reaching, retracting
+        this.predationTimer = 0;
+        this.onConsumePrey = null; // Callback for particles
     }
 
     initLegs() {
@@ -307,6 +311,11 @@ export class Insect {
 
 
     update(input) {
+        // Immobilize if eating (Spider)
+        if (this.form === 'SPIDER' && this.predationState !== 'idle') {
+            input = { up: false, down: false, left: false, right: false, shift: false };
+        }
+
         // --- Walk Cycle ---
         if (this.vel.mag() > 0.1) {
             this.walkCycle += 0.2; // Adjust speed as needed
@@ -1008,6 +1017,7 @@ export class Insect {
             return;
         } else if (this.form === 'SPIDER') {
             // Logic is now driven by legs calling toggleGait()
+            this.updatePredation();
             this.spiderLegs.forEach(leg => leg.update());
             return;
         }
@@ -1148,6 +1158,9 @@ export class Insect {
         // Legs
         this.spiderLegs.forEach(leg => leg.draw(ctx));
 
+        // Held Prey
+        this.drawHeldPrey(ctx);
+
         // Body
         this.drawSpiderBody(ctx, false);
     }
@@ -1193,34 +1206,87 @@ export class Insect {
 
     getEatRange() {
         if (this.form === 'SPIDER') {
-            // Legs are long (120 * scale). Let's use 80% of leg length as eat range.
             return SPIDER_CONFIG.legLength * 0.8 * this.scale;
         }
         return 25 * this.scale;
     }
 
-    onEat(targetPos) {
-        if (this.form === 'SPIDER' && this.spiderLegs.length >= 2) {
-            // Front legs: Indices 0 and 1 (Pair 0)
-            const frontLeft = this.spiderLegs[0];
-            const frontRight = this.spiderLegs[1];
+    startPredation(prey, consumeCallback) {
+        if (this.form !== 'SPIDER' || this.spiderLegs.length < 2) return false;
+        if (this.predationState !== 'idle') return false; // Busy
 
-            // 1. Reach for food
-            frontLeft.overrideTarget = targetPos;
-            frontRight.overrideTarget = targetPos;
+        this.heldPrey = {
+            pos: prey.pos.clone(), // Clone position to animate independently
+            color: prey.color || '#fff',
+            size: (prey.size || 5) * (prey.scale || 1)
+        };
+        this.onConsumePrey = consumeCallback;
+        this.predationState = 'reaching';
+        this.predationTimer = 0;
 
-            // 2. Pull to mouth
-            setTimeout(() => {
+        // Front legs reach out
+        const frontLeft = this.spiderLegs[0];
+        const frontRight = this.spiderLegs[1];
+        frontLeft.overrideTarget = this.heldPrey.pos;
+        frontRight.overrideTarget = this.heldPrey.pos;
+
+        return true;
+    }
+
+    updatePredation() {
+        if (this.predationState === 'idle') return;
+
+        const frontLeft = this.spiderLegs[0];
+        const frontRight = this.spiderLegs[1];
+
+        if (this.predationState === 'reaching') {
+            // Legs moving to prey (handled by overrideTarget lerp in leg.update)
+            // Check if close enough to grab
+            // For now, just timer based is safer / simpler
+            this.predationTimer++;
+            if (this.predationTimer > 20) { // 20 frames reach
+                this.predationState = 'retracting';
+                // Set target to mouth
                 frontLeft.overrideTarget = this.headPos;
                 frontRight.overrideTarget = this.headPos;
+            }
+        } else if (this.predationState === 'retracting') {
+            // Update targets to follow moving head
+            frontLeft.overrideTarget = this.headPos;
+            frontRight.overrideTarget = this.headPos;
 
-                // 3. Release
-                setTimeout(() => {
-                    frontLeft.overrideTarget = null;
-                    frontRight.overrideTarget = null;
-                }, 200);
-            }, 100);
+            // Drag prey to mouth
+            // Prey position should follow leg tips (average of two tips)
+            const tipCenter = frontLeft.currentPos.add(frontRight.currentPos).mult(0.5);
+            this.heldPrey.pos = tipCenter;
+
+            this.predationTimer++;
+            // Check distance to mouth
+            if (this.heldPrey.pos.dist(this.headPos) < 15 * this.scale) {
+                // Eat!
+                if (this.onConsumePrey) this.onConsumePrey(this.heldPrey.pos); // Trigger particles/XP logic
+
+                // Reset
+                this.heldPrey = null;
+                this.predationState = 'idle';
+                this.onConsumePrey = null;
+
+                // Release legs
+                frontLeft.overrideTarget = null;
+                frontRight.overrideTarget = null;
+            }
         }
+    }
+
+    drawHeldPrey(ctx) {
+        if (!this.heldPrey) return;
+        ctx.beginPath();
+        ctx.arc(this.heldPrey.pos.x, this.heldPrey.pos.y, this.heldPrey.size, 0, Math.PI * 2);
+        ctx.fillStyle = this.heldPrey.color;
+        ctx.fill();
+        ctx.strokeStyle = "rgba(0,0,0,0.3)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
     }
 
     toggleGait() {
