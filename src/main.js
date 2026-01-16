@@ -103,7 +103,8 @@ player.onLevelUp = (lvl) => {
 };
 player.onEvolve = (formName, stage) => {
     // Check for Stage 5 (Spider) -> World Reset
-    if (stage === 5) {
+    if (stage === 5 && !player.hasResetWorld) {
+        player.hasResetWorld = true;
         // 1. Popup Prompt
         // Use setTimeout to allow the render loop to maybe show the spider for a split second? 
         // Or just block immediately. User said "Before reset".
@@ -124,19 +125,31 @@ player.onEvolve = (formName, stage) => {
             player.targetScale = 1.0;
             // Optionally increase world tier for difficulty scaling if desired, 
             // but user request was specific about resetting scale/zoom.
+            // Calculate Scale Divisor. 
+            // Previous Logic: player.worldTier was just counting 1,2,3...
+            // New Requirement: We need specific size reduction.
+            // Canonical Start Scale for Stage 5 is 6.5 (from STAGE_CONFIG).
+            // New Scale is 1.0.
+            // So we are dividing everything by 6.5.
+            // Let's store this cumulative divisor.
+            if (!player.worldScaleDivisor) player.worldScaleDivisor = 1.0;
+
+            // Hardcoded reference to Stage 5 Start Scale from Insect.js STAGE_CONFIG
+            // We can't import STAGE_CONFIG here easily because it's a value not a type, 
+            // but we can access it if we exported it or just hardcode 6.5 for now as the 'Spider Base'.
+            const SPIDER_BASE_SCALE = 6.5;
+
+            // Cumulative: If we reset AGAIN later (e.g. at Mantis?), we'd multiply.
+            player.worldScaleDivisor *= SPIDER_BASE_SCALE;
+
             if (!player.worldTier) player.worldTier = 1.0;
             player.worldTier += 1.0; // Increment Tier
 
             // Re-init legs at new scale 1.0
             player.initLegs();
 
-            // Reset Position (Safe spawn)
-            // Keep relative position or center? Center is safer for new world.
-            // player.pos = new Vec2(width/2, height/2); // Maybe keeping position is fun? 
-            // Let's keep position to avoid jarring jump, or center? 
-            // User said "Create a new world", implied fresh start.
-            // Let's centering.
-            // player.pos = new Vec2(0, 0); // Assuming world 0,0 is fine.
+            // Reset Position (Center)
+            player.pos = new Vec2(0, 0);
 
             // 4. Reset Zoom
             window.gameScale = 1.0;
@@ -146,6 +159,14 @@ player.onEvolve = (formName, stage) => {
         }, 100);
 
         return;
+    }
+
+    // Reset the flag if we are NOT 5 (e.g. if we somehow downgraded or upgraded past it, though 6 is Mantis)
+    // Actually, we only want to trigger this ONCE per run. 
+    // But if we reset, we stay Stage 5. 
+    // So we need a flag "hasResetThisStage".
+    if (stage !== 5) {
+        player.hasResetWorld = false;
     }
 
     // Large, prominent gold text
@@ -237,8 +258,10 @@ function spawnCreeps() {
 
         // --- Scale Scaling for World Reset ---
         // New NPCs must match the player's "Shrunk" world scale
-        if (player.worldTier && player.worldTier > 1.0) {
-            let shrinkFactor = 1.0 / player.worldTier;
+        // --- Scale Scaling for World Reset ---
+        // New NPCs must match the player's "Shrunk" world scale
+        if (player.worldScaleDivisor && player.worldScaleDivisor > 1.0) {
+            let shrinkFactor = 1.0 / player.worldScaleDivisor;
             rival.scale *= shrinkFactor;
             rival.baseScale *= shrinkFactor;
             rival.targetScale *= shrinkFactor;
@@ -246,8 +269,14 @@ function spawnCreeps() {
             // Also need to boost their stats to match the "Tier"?
             // If they are physically small, but "Stage X", they should have normal stats?
             // Actually, if player has 20x stats (via worldTier), and enemies have 1x stats, player OPs them.
+            // If they are physically small, but "Stage X", they should have normal stats?
+            // Actually, if player has 20x stats (via worldTier), and enemies have 1x stats, player OPs them.
             // If "World Reset" implies "Ascension", enemies should definitely be harder.
-            // So we should multiply their stats by worldTier too?
+            // So we should multiply their stats by worldScaleDivisor too? 
+            // Or use worldTier (which counts Resets).
+            // Let's stick to worldTier for Stats, but worldScaleDivisor for Size.
+            // rival.worldTier = player.worldTier;
+            // For now, let's just make their size correct. The complexity of stats can be tuned later.
             // Yes.
             rival.worldTier = player.worldTier;
             // We need to ensure logic in Insect uses worldTier for damage/hp
@@ -271,8 +300,8 @@ function spawnCreeps() {
             if (scale < 1.0) food.size *= (1 / scale) * 0.5;
 
             // Apply World Shrink
-            if (player.worldTier && player.worldTier > 1.0) {
-                food.size /= player.worldTier;
+            if (player.worldScaleDivisor && player.worldScaleDivisor > 1.0) {
+                food.size /= player.worldScaleDivisor;
             }
 
             creeps.push(food);
@@ -434,72 +463,19 @@ function gameLoop() {
     let minDimension = Math.min(width, height);
     let baseRadius = 60;
     if (player.form === 'COCKROACH') baseRadius = 140; // Legs + Antennae
-    if (player.form === 'SPIDER') baseRadius = 300; // Very long legs (120*2 diameter approx)
+    // FIX: Spider legs are long, but if we account for full leg span (300), the camera zooms out too far (0.3).
+    // We want Zoom ~1.0 for the New World. So treating it closer to standard size (e.g. 100-120) makes sense.
+    // This lets legs clip off screen edges slightly but keeps the "Main Character" feel.
+    if (player.form === 'SPIDER') baseRadius = 120;
     if (player.form === 'MANTIS') baseRadius = 1200; // Scythes are huge. Force extreme zoom out.
 
-    // DEBUG ZOOM
-    if (Math.random() < 0.01) console.log("Zoom Debug:", player.form, baseRadius, player.scale, window.gameScale);
-
-    // --- True World Reset Logic ---
-
-    // 1. Calculate Desired Zoom based on current physical size
     let visualSize = player.scale * baseRadius;
     let desiredZoom = (minDimension * 0.15) / visualSize;
 
-    // 2. Check for Reset Trigger
-    if (desiredZoom < 0.05) {
-        console.log("TRIGGERING WORLD RESET!");
+    // 3. Normal Zoom Logic
 
-        // --- PERFORM RESET ---
 
-        // Dynamic Reset Factor: forces the new scale to result in EXACTLY Zoom 1.0
-        // Formula: 1.0 = (minDimension * 0.15) / (newScale * baseRadius)
-        // newScale = (minDimension * 0.15) / baseRadius
 
-        // Safeguard to prevent division by zero or weirdness
-        if (baseRadius <= 0) baseRadius = 60;
-
-        let idealNewScale = (minDimension * 0.15) / baseRadius;
-        let RESET_FACTOR = player.scale / idealNewScale;
-
-        // Sanity check: Factor should be large (e.g. > 15). If it's small, maybe we shouldn't reset?
-        // But trigger was desiredZoom < 0.05.
-        // desiredZoom = (min * 0.15) / (scale * radius) < 0.05
-        // (min * 0.15) / scale / radius < 0.05
-        // (min * 0.15) / radius < 0.05 * scale
-        // scale > (min * 0.15) / radius / 0.05 = idealNewScale / 0.05 = 20 * idealNewScale.
-        // Thus scale / idealNewScale > 20.
-        // So RESET_FACTOR will be > 20. Correct.
-
-        // 1. Shrink Player
-        player.scale /= RESET_FACTOR;
-        player.baseScale /= RESET_FACTOR;
-        player.targetScale /= RESET_FACTOR;
-
-        // CRITICAL: Re-init legs so they pick up the new scale!
-        player.initLegs();
-
-        // 2. Boost Power Tier (So stats don't drop)
-        player.worldTier *= RESET_FACTOR;
-
-        // 3. Reset Zoom Variable
-        window.gameScale = 1.0;
-
-        // 4. Force Camera Update (Prevent Glitch)
-        // Camera position logic handles itself (follows player).
-
-        // 5. Clear Old World (They are now microscopic)
-        // We could shrink them too? No, user wants a "New Canvas".
-        creeps.length = 0; // Wipe array
-        particles.length = 0;
-        texts.length = 0;
-
-        // 6. Spawn New Enemies immediately?
-        // spawnCreeps() will run next frame.
-
-        // 7. Visual Notification
-        texts.push(new FloatingText(player.pos.x, player.pos.y - 100, "DIMENSION ASCENSION!", '#FFD700', 60, 5.0));
-    }
 
     // 3. Normal Zoom Logic
     // Allow zooming down to 0.05 (Limit)
