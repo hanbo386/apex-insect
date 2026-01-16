@@ -21,10 +21,22 @@ export class FloatingText {
         if (this.life <= 0) return;
         ctx.save();
         ctx.globalAlpha = Math.max(0, this.life);
-        ctx.font = `bold ${this.size}px Arial`;
+
+        let scale = window.gameScale || 1.0;
+        let fontSize = this.size;
+
+        // Enforce minimum screen size for readability (e.g. 14px)
+        let minScreenSize = 14;
+        let currentScreenSize = fontSize * scale;
+
+        if (currentScreenSize < minScreenSize) {
+            fontSize = minScreenSize / scale;
+        }
+
+        ctx.font = `bold ${Math.floor(fontSize)}px Arial`;
         ctx.fillStyle = this.color;
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'black'; // Better contrast than white on bright sand
+        ctx.lineWidth = Math.max(2, 2 / scale); // Scale stroke too
         ctx.textAlign = 'center';
 
         ctx.strokeText(this.text, this.pos.x, this.pos.y);

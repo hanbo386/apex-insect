@@ -287,4 +287,18 @@ export class CockroachAntenna {
         ctx.lineWidth = 1 * this.scale;
         ctx.stroke();
     }
+
+    reset(rootPos, rootAngle) {
+        this.segments[0] = rootPos.copy();
+        let currentSegmentLen = (this.baseLength * this.scale) / this.segmentCount;
+
+        for (let i = 1; i < this.segments.length; i++) {
+            let localAngle = (this.side * 0.4) - (this.side * (i * 0.04));
+            let targetAngle = rootAngle + localAngle;
+
+            let prev = this.segments[i - 1];
+            let offset = new Vec2(Math.cos(targetAngle), Math.sin(targetAngle)).mult(currentSegmentLen);
+            this.segments[i] = prev.add(offset);
+        }
+    }
 }

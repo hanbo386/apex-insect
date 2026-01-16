@@ -4,6 +4,18 @@ import { CockroachLeg, CockroachAntenna } from './CockroachParts.js';
 import { SpiderLeg, SPIDER_CONFIG } from './SpiderParts.js';
 import { MantisLeg } from './MantisParts.js';
 
+// --- Standardized Size Configuration ---
+// Defines the scale range for each evolution stage.
+export const STAGE_CONFIG = {
+    0: { name: 'PRIMITIVE', startScale: 0.4, endScale: 0.6 },
+    1: { name: 'ANT', startScale: 0.6, endScale: 1.0 },
+    2: { name: 'LADYBUG', startScale: 1.2, endScale: 1.8 },
+    3: { name: 'PILLBUG', startScale: 2.0, endScale: 3.0 },
+    4: { name: 'COCKROACH', startScale: 3.5, endScale: 5.5 },
+    5: { name: 'SPIDER', startScale: 6.5, endScale: 10.0 },
+    6: { name: 'MANTIS', startScale: 12.0, endScale: 18.0 }
+};
+
 /**
  * 昆虫主体类 (Insect)
  * Base class for the player creature and NPCs.
@@ -26,9 +38,19 @@ export class Insect {
         this.xp = 0;
         this.xpToNext = 5; // 升级所需初始 XP
         this.evolutionStage = 0; // 0: Primitive, 1: Ant, 2: Ladybug...
-        this.scale = 0.6; // Primitive starts tiny
-        this.baseScale = 0.6;
-        this.targetScale = 0.6;
+
+        // Size Init
+        const config = STAGE_CONFIG[0];
+        this.baseScale = config.startScale;
+        this.targetScale = config.startScale;
+        this.scale = config.startScale;
+
+        // --- Prestige / World Reset Multiplier ---
+        this.worldTier = 1.0;
+        // Used to shrink the entity physically when the world resets,
+        // without affecting its "Canonical" base scale.
+        this.worldScaleModifier = 1.0;
+
 
         this.flashTimer = 0; // Visual effect for leveling up
 
@@ -98,51 +120,93 @@ export class Insect {
                 new MantisLeg(1, 20, 10, 30, 40, true)
             ];
             // Init feet positions to current pos
-            this.mantisLegs.forEach(l => {
-                l.footX = this.pos.x;
-                l.footY = this.pos.y;
-                l.updateScale(this.scale);
+            this.mantisLegs.forEach(leg => {
+                leg.update(this.thoraxPos, this.angle, this.vel);
             });
-            return;
+            this.legs = []; // Clear standard legs
         }
-
-        let legConfigs = [];
-
-        if (this.evolutionStage === 1) { // ANT (Stage 1)
-            legConfigs = [
-                { id: 0, side: -1, x: 5 },
-                { id: 1, side: -1, x: 0 },
-                { id: 2, side: -1, x: -5 },
-                { id: 3, side: 1, x: 5 },
-                { id: 4, side: 1, x: 0 },
-                { id: 5, side: 1, x: -5 }
-            ];
-            legConfigs.forEach(cfg => {
-                this.legs.push(new Leg(cfg.id, cfg.side, cfg.x, cfg.side * 2.5, this.scale));
-            });
-        } else if (this.evolutionStage === 0) { // Primitive (Stage 0)
-            legConfigs = [
-                { id: 0, side: -1, x: 3 },
-                { id: 1, side: -1, x: 0 },
-                { id: 2, side: -1, x: -3 },
-                { id: 3, side: 1, x: 3 },
-                { id: 4, side: 1, x: 0 },
-                { id: 5, side: 1, x: -3 }
-            ];
-            legConfigs.forEach(cfg => {
-                this.legs.push(new Leg(cfg.id, cfg.side, cfg.x, cfg.side * 1.5, this.scale));
-            });
+        else if (this.form === 'SPIDER') {
+            this.spiderLegs = [];
+            // Init 8 legs (4 pairs)
+            for (let i = 0; i < 4; i++) {
+                this.spiderLegs.push(new SpiderLeg(this, i, -1, this.scale));
+                this.spiderLegs.push(new SpiderLeg(this, i, 1, this.scale));
+            }
+            this.legs = [];
         }
-        // Higher stages (Ladybug/Pillbug) might not use standard legs or use different logic.
-        // Assuming Ant-like legs are fine for now or handled elsewhere.
+        else if (this.form === 'COCKROACH') {
+            this.cockroachLegs = [];
 
-        this.legs.forEach(leg => {
-            leg.currentPos = leg.idealOffset.add(this.pos);
-            leg.targetPos = leg.currentPos.clone();
-        });
+            // Front (Index 0)
+            this.cockroachLegs.push(new CockroachLeg(-1, 0, new Vec2(22, -16), 28, 25, this.scale));
+            this.cockroachLegs.push(new CockroachLeg(1, 0, new Vec2(22, 16), 28, 25, this.scale));
 
-        // Callback
-        this.onLevelUp = null;
+            // Mid (Index 1)
+            this.cockroachLegs.push(new CockroachLeg(-1, 1, new Vec2(5, -22), 40, 30, this.scale));
+            this.cockroachLegs.push(new CockroachLeg(1, 1, new Vec2(5, 22), 40, 30, this.scale));
+
+            // Back (Index 2)
+            this.cockroachLegs.push(new CockroachLeg(-1, 2, new Vec2(-15, -20), 48, 35, this.scale));
+            this.cockroachLegs.push(new CockroachLeg(1, 2, new Vec2(-15, 20), 48, 35, this.scale));
+
+            this.leftCockroachAntenna = new CockroachAntenna(130, 12, -1, this.scale);
+            this.rightCockroachAntenna = new CockroachAntenna(130, 12, 1, this.scale);
+
+            this.legs = [];
+
+            // --- Snap to Initial Position (Fix for black lines Glitch) ---
+            this.cockroachLegs.forEach(leg => {
+                let target = leg.calculateTarget(this.pos, this.angle, this.vel);
+                leg.footPos = target;
+                leg.targetPos = target.clone();
+            });
+
+            // Initial Head Position for Antennae
+            let headBase = this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(35 * this.scale));
+            if (this.leftCockroachAntenna) this.leftCockroachAntenna.reset(headBase, this.angle);
+            if (this.rightCockroachAntenna) this.rightCockroachAntenna.reset(headBase, this.angle);
+        }
+        else {
+            // Default Primitive/Ant/Ladybug/Pillbug Legs
+
+            let legConfigs = [];
+
+            if (this.evolutionStage === 1) { // ANT (Stage 1)
+                legConfigs = [
+                    { id: 0, side: -1, x: 5 },
+                    { id: 1, side: -1, x: 0 },
+                    { id: 2, side: -1, x: -5 },
+                    { id: 3, side: 1, x: 5 },
+                    { id: 4, side: 1, x: 0 },
+                    { id: 5, side: 1, x: -5 }
+                ];
+                legConfigs.forEach(cfg => {
+                    this.legs.push(new Leg(cfg.id, cfg.side, cfg.x, cfg.side * 2.5, this.scale));
+                });
+            } else if (this.evolutionStage === 0) { // Primitive (Stage 0)
+                legConfigs = [
+                    { id: 0, side: -1, x: 3 },
+                    { id: 1, side: -1, x: 0 },
+                    { id: 2, side: -1, x: -3 },
+                    { id: 3, side: 1, x: 3 },
+                    { id: 4, side: 1, x: 0 },
+                    { id: 5, side: 1, x: -3 }
+                ];
+                legConfigs.forEach(cfg => {
+                    this.legs.push(new Leg(cfg.id, cfg.side, cfg.x, cfg.side * 1.5, this.scale));
+                });
+            }
+            // Higher stages (Ladybug/Pillbug) might not use standard legs or use different logic.
+            // Assuming Ant-like legs are fine for now or handled elsewhere.
+
+            this.legs.forEach(leg => {
+                leg.currentPos = leg.idealOffset.add(this.pos);
+                leg.targetPos = leg.currentPos.clone();
+            });
+
+            // Callback
+            this.onLevelUp = null;
+        }
     }
 
     gainXp(amount) {
@@ -165,9 +229,18 @@ export class Insect {
         this.xpToNext = Math.floor(this.xpToNext * 1.5);
         this.flashTimer = 30;
 
-        // Growth
-        this.baseScale *= 1.10;
-        this.targetScale = this.baseScale;
+        // Growth: Interpolate between start and end scale for this stage
+        const config = STAGE_CONFIG[this.evolutionStage];
+        if (config) {
+            // Level 1 -> StartScale
+            // Level 5 -> EndScale
+            // Progress = (Level - 1) / 4.0
+            // (1-1)/4 = 0. (5-1)/4 = 1.0. 
+            // Cap at 1.0 if level > 5 (though max is 5 normally)
+            let progress = Math.min(1.0, Math.max(0.0, (this.level - 1) / 4.0));
+            this.baseScale = config.startScale + (config.endScale - config.startScale) * progress;
+            this.targetScale = this.baseScale;
+        }
 
         this.initLegs(); // Re-init legs for size
 
@@ -185,40 +258,33 @@ export class Insect {
         this.evolutionStage = 0;
         this.level = 1;
         this.xp = 0;
-        this.scale = 0.6;
-        this.baseScale = 0.6;
-        this.targetScale = 0.6;
-        this.form = 'PRIMITIVE';
-        this.maxSpeed = 2.0;
-        this.initLegs();
 
-        // 1. Advance Stages
+        // 1. Advance Stages DIRECTLY
+        // We can jump straight to the target stage and call evolve once per step to set properties
+        // Or better, just loop and call evolve logic.
+        // Actually, calling evolve() sets the baseScale correctly from config now.
         while (this.evolutionStage < targetStage) {
-            // Simulate growth from Level 1 to 5 for this stage
-            // We use the same multiplier as levelUp (1.10) applied 4 times (Lvl 1->5)
-            // This ensures the base scale matches what a player would have achieved.
-            this.baseScale *= Math.pow(1.10, 4);
-
-            // Force sync current scale to base before evolving
-            this.scale = this.baseScale;
-            this.targetScale = this.baseScale;
-
-            this.evolve(true);
+            this.evolve(true); // Loops until stage matched.
         }
 
-        // 2. Advance Levels within current Stage
-        // targetLevel should be 1-5
-        for (let i = 1; i < targetLevel; i++) {
-            this.levelUp();
+        // 2. Set Level within stage
+        // Just set the level property, then manually trigger the size calculation
+        this.level = targetLevel;
+        // Recalculate scale based on new level
+        const config = STAGE_CONFIG[this.evolutionStage];
+        if (config) {
+            // Same math as levelUp
+            let progress = Math.min(1.0, Math.max(0.0, (this.level - 1) / 4.0));
+            this.baseScale = config.startScale + (config.endScale - config.startScale) * progress;
+            this.targetScale = this.baseScale;
+            this.scale = this.targetScale * this.worldScaleModifier;
         }
 
         // Restore callbacks
         this.onLevelUp = originalOnLevelUp;
         this.onEvolve = originalOnEvolve;
 
-        // Update visual form logic immediately
-        // Force Final Sync of Scale
-        this.scale = this.targetScale;
+        // Re-init legs for final form
         this.initLegs();
     }
 
@@ -228,14 +294,21 @@ export class Insect {
         this.xp = 0;    // Reset XP
 
         // Structural Evolution Growth
-        // Ensure New Stage Lvl 1 > Old Stage Lvl 5
-        // Level Up gives 1.1x. Max level (5) is ~1.46x.
-        // We apply an extra visual bump for the new stage.
-        this.baseScale *= 1.25;
-        this.targetScale = this.baseScale;
+        // STRICT SIZE UPDATE from Config
+        const config = STAGE_CONFIG[this.evolutionStage];
+        if (config) {
+            this.baseScale = config.startScale;
+            this.targetScale = config.startScale;
+        } else {
+            // Fallback if config missing
+            this.baseScale *= 1.5;
+            this.targetScale = this.baseScale;
+        }
 
+        // Immediately apply if instant, but respecting modifier will happen in update loop
+        // If instant, we might want to force it
         if (isInstant) {
-            this.scale = this.targetScale;
+            this.scale = this.targetScale * this.worldScaleModifier;
         }
 
         // Increase difficulty for next stage
@@ -292,32 +365,24 @@ export class Insect {
                 this.pillBugSegments.push({ x: this.pos.x, y: this.pos.y, angle: this.angle });
             }
             formName = "潮虫 (PILLBUG)";
+
         } else if (this.evolutionStage === 4) {
             this.form = 'COCKROACH';
             this.maxSpeed *= 1.3;
-            this.cockroachLegs = [];
-            // ... Cockroach legs (omitted for brevity, handled below or existing)
-            // Just ensure we don't crash. The existing code block for cockroach legs needs to stay.
 
-            // Front (Index 0)
-            this.cockroachLegs.push(new CockroachLeg(-1, 0, new Vec2(22, -16), 28, 25, this.scale));
-            this.cockroachLegs.push(new CockroachLeg(1, 0, new Vec2(22, 16), 28, 25, this.scale));
-
-            // Mid (Index 1)
-            this.cockroachLegs.push(new CockroachLeg(-1, 1, new Vec2(5, -22), 40, 30, this.scale));
-            this.cockroachLegs.push(new CockroachLeg(1, 1, new Vec2(5, 22), 40, 30, this.scale));
-
-            // Back (Index 2)
-            this.cockroachLegs.push(new CockroachLeg(-1, 2, new Vec2(-15, -20), 48, 35, this.scale));
-            this.cockroachLegs.push(new CockroachLeg(1, 2, new Vec2(-15, 20), 48, 35, this.scale));
-
-            this.leftCockroachAntenna = new CockroachAntenna(130, 12, -1, this.scale);
-            this.rightCockroachAntenna = new CockroachAntenna(130, 12, 1, this.scale);
+            this.initLegs();
 
             formName = "蟑螂 (COCKROACH)";
         } else if (this.evolutionStage === 5) {
             this.form = 'SPIDER';
             this.maxSpeed *= 1.2; // Fast
+
+            // Compensation for BaseRadius jump (140 -> 300)
+            // Shrink scale so visual size remains steady
+            let shrink = 0.5;
+            this.baseScale *= shrink;
+            this.targetScale *= shrink;
+            this.scale *= shrink;
 
             this.spiderLegs = [];
             // Init 8 legs (4 pairs)
@@ -330,15 +395,21 @@ export class Insect {
             formName = "细脚长腿蛛 (SPIDER)";
         } else if (this.evolutionStage === 6) {
             this.form = 'MANTIS';
-            this.maxSpeed = 3.5;
-            this.scale = this.baseScale * 1.2; // Extra size
+            this.maxSpeed *= 1.25;
+
+            // Compensation for BaseRadius jump (300 -> 1200)
+            // Huge jump. Shrink significantly.
+            let shrink = 0.25;
+            this.baseScale *= shrink;
+            this.targetScale *= shrink;
+            this.scale *= shrink;
 
             this.initLegs();
 
             formName = "螳螂 (MANTIS)";
         }
 
-        if (this.onEvolve) this.onEvolve(formName);
+        if (this.onEvolve) this.onEvolve(formName, this.evolutionStage);
     }
 
     // Manual Evolution Trigger
@@ -360,16 +431,18 @@ export class Insect {
         }
 
         // --- Smooth Growth ---
-        if (Math.abs(this.scale - this.targetScale) > 0.01) {
-            this.scale += (this.targetScale - this.scale) * 0.05;
+        let effectiveTarget = this.targetScale * this.worldScaleModifier;
+        if (Math.abs(this.scale - effectiveTarget) > 0.01) {
+            this.scale += (effectiveTarget - this.scale) * 0.05;
             // Update legs scale without resetting them
             this.legs.forEach(leg => leg.updateScale(this.scale));
             this.cockroachLegs.forEach(leg => leg.updateScale(this.scale));
             if (this.leftCockroachAntenna) this.leftCockroachAntenna.updateScale(this.scale);
             if (this.rightCockroachAntenna) this.rightCockroachAntenna.updateScale(this.scale);
             this.spiderLegs.forEach(leg => leg.updateScale(this.scale));
+            if (this.mantisLegs) this.mantisLegs.forEach(leg => leg.updateScale(this.scale));
         } else {
-            this.scale = this.targetScale;
+            this.scale = effectiveTarget;
         }
 
         if (this.flashTimer > 0) this.flashTimer--;
@@ -1125,6 +1198,11 @@ export class Insect {
         // 2. Legs (Under body)
         this.mantisLegs.forEach(leg => leg.draw(ctx));
 
+        // Draw Held Prey (Under body or Over? Legs are under body, prey held by legs should maybe be under too?)
+        if (this.predationState === 'mantis_grapple' && this.heldPrey) {
+            this.drawHeldPrey(ctx);
+        }
+
         // 3. Body
         ctx.save();
         ctx.translate(this.pos.x + this.lungeOffset.x, this.pos.y + this.lungeOffset.y);
@@ -1395,6 +1473,8 @@ export class Insect {
     getEatRange() {
         if (this.form === 'SPIDER') {
             return SPIDER_CONFIG.legLength * 0.8 * this.scale;
+        } else if (this.form === 'MANTIS') {
+            return 60 * this.scale; // Scythe reach is long
         }
         return 25 * this.scale;
     }
@@ -1417,6 +1497,14 @@ export class Insect {
             const frontRight = this.spiderLegs[1];
             frontLeft.overrideTarget = this.heldPrey.pos;
             frontRight.overrideTarget = this.heldPrey.pos;
+        } else if (this.form === 'MANTIS' && this.mantisLegs) {
+            this.predationState = 'mantis_grapple';
+            this.predationTimer = 0;
+            // Front Arms: Index 4, 5
+            const armL = this.mantisLegs[4]; // Left
+            const armR = this.mantisLegs[5]; // Right
+            armL.overrideTarget = this.heldPrey.pos;
+            armR.overrideTarget = this.heldPrey.pos;
         } else {
             // Generic Lunge
             this.predationState = 'lunging';
@@ -1428,6 +1516,47 @@ export class Insect {
 
     updatePredation() {
         if (this.predationState === 'idle') return;
+
+        // --- Mantis Grapple ---
+        if (this.predationState === 'mantis_grapple') {
+            this.predationTimer++;
+            const armL = this.mantisLegs[4];
+            const armR = this.mantisLegs[5];
+
+            // Pull Stage (Immediate pull for snappy feel, or delayed?)
+            // Let's do: 
+            // 1. Arms go to prey (Already set overrideTarget in start)
+            // 2. Drag prey to Head
+
+            // Target Position: Mouth
+            const mouthPos = this.headPos.clone().add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(5 * this.scale));
+
+            // Smoothly pull prey to mouth
+            const dist = this.heldPrey.pos.dist(mouthPos);
+
+            // Pull Speed
+            const pullSpeed = 4.0 * this.scale;
+
+            if (dist > pullSpeed) {
+                // Move prey towards mouth
+                let dir = mouthPos.sub(this.heldPrey.pos).normalize().mult(pullSpeed);
+                this.heldPrey.pos = this.heldPrey.pos.add(dir);
+
+                // Update arms target to follow prey
+                armL.overrideTarget = this.heldPrey.pos;
+                armR.overrideTarget = this.heldPrey.pos;
+            } else {
+                // Arrived at mouth
+                if (this.onConsumePrey) {
+                    this.onConsumePrey(this.heldPrey.pos); // Particles
+                    this.onConsumePrey = null;
+                }
+                this.predationState = 'idle';
+                armL.overrideTarget = null;
+                armR.overrideTarget = null;
+            }
+            return;
+        }
 
         // --- Generic Lunge ---
         if (this.predationState === 'lunging') {

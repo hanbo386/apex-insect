@@ -41,13 +41,12 @@ export class MantisLeg {
         this.stepSpeed = 0.15;
 
         this.scale = 1.0;
+        this.overrideTarget = null;
     }
 
     updateScale(s) {
         this.scale = s;
-        // Adjust threshold by scale? User code used hardcoded 60. 
-        // We should scale inputs in update/draw, or scale properties here.
-        // Let's scale threshold.
+        // Adjust threshold by scale
         this.stepThreshold = (this.isFrontArm ? 9999 : 60) * s;
     }
 
@@ -66,67 +65,82 @@ export class MantisLeg {
         const rootX = bodyX + (offX * cosA - offY * sinA);
         const rootY = bodyY + (offX * sinA + offY * cosA);
 
-        // Ideal Foot Position
-        // Predict forward based on speed
-        const lead = velocityMag * 5;
+        // --- Manual Override (Predation) ---
+        if (this.overrideTarget) {
+            // Legs reach for target directly
+            this.targetX = this.overrideTarget.x;
+            this.targetY = this.overrideTarget.y;
 
-        let idealOffsetX, idealOffsetY;
+            // Lerp for smooth movement
+            this.footX = MathUtils.lerp(this.footX, this.targetX, 0.2);
+            this.footY = MathUtils.lerp(this.footY, this.targetY, 0.2);
 
-        if (this.isFrontArm) {
-            // Scythe: Hover in front
-            idealOffsetX = offX + (40 * s);
-            idealOffsetY = offY + (this.side * 25 * s);
+            this.stepProgress = 1; // Start "landed"
         } else {
-            // Walking legs
-            const legLen = L1 + L2;
+            // --- Standard Gait Logic ---
 
-            if (this.offsetX < -20) { // Check original unscaled offset for logic
-                // Back legs
-                idealOffsetX = offX - (20 * s);
-                idealOffsetY = offY + (this.side * legLen * 0.7);
+            // Ideal Foot Position
+            // Predict forward based on speed
+            const lead = velocityMag * 5;
+
+            let idealOffsetX, idealOffsetY;
+
+            if (this.isFrontArm) {
+                // Scythe: Hover in front
+                idealOffsetX = offX + (40 * s);
+                idealOffsetY = offY + (this.side * 25 * s);
             } else {
-                // Mid legs
-                idealOffsetX = offX + (15 * s);
-                idealOffsetY = offY + (this.side * legLen * 0.6);
+                // Walking legs
+                const legLen = L1 + L2;
+
+                if (this.offsetX < -20) { // Check original unscaled offset for logic
+                    // Back legs
+                    idealOffsetX = offX - (20 * s);
+                    idealOffsetY = offY + (this.side * legLen * 0.7);
+                } else {
+                    // Mid legs
+                    idealOffsetX = offX + (15 * s);
+                    idealOffsetY = offY + (this.side * legLen * 0.6);
+                }
             }
-        }
 
-        const idealX = bodyX + (idealOffsetX * cosA - idealOffsetY * sinA);
-        const idealY = bodyY + (idealOffsetX * sinA + idealOffsetY * cosA);
+            const idealX = bodyX + (idealOffsetX * cosA - idealOffsetY * sinA);
+            const idealY = bodyY + (idealOffsetX * sinA + idealOffsetY * cosA);
 
-        // Gait Logic
-        if (!this.isFrontArm) {
-            const distToIdeal = MathUtils.dist(this.footX, this.footY, idealX, idealY);
+            // Gait Logic
+            if (!this.isFrontArm) {
+                const distToIdeal = MathUtils.dist(this.footX, this.footY, idealX, idealY);
 
-            // Trigger step
-            if (distToIdeal > this.stepThreshold && this.stepProgress >= 1) {
-                this.stepProgress = 0;
-                this.stepStartX = this.footX;
-                this.stepStartY = this.footY;
-                this.targetX = idealX + Math.cos(bodyAngle) * lead;
-                this.targetY = idealY + Math.sin(bodyAngle) * lead;
+                // Trigger step
+                if (distToIdeal > this.stepThreshold && this.stepProgress >= 1) {
+                    this.stepProgress = 0;
+                    this.stepStartX = this.footX;
+                    this.stepStartY = this.footY;
+                    this.targetX = idealX + Math.cos(bodyAngle) * lead;
+                    this.targetY = idealY + Math.sin(bodyAngle) * lead;
+                }
+            } else {
+                // Scythe follows smoothly with lag
+                this.targetX = idealX;
+                this.targetY = idealY;
+                this.footX = MathUtils.lerp(this.footX, this.targetX, 0.1);
+                this.footY = MathUtils.lerp(this.footY, this.targetY, 0.1);
+
+                // Idle sway
+                const sway = Math.sin(Date.now() / 400) * 5 * s;
+                this.footX += Math.cos(bodyAngle + Math.PI / 2) * sway;
+                this.footY += Math.sin(bodyAngle + Math.PI / 2) * sway;
             }
-        } else {
-            // Scythe follows smoothly with lag
-            this.targetX = idealX;
-            this.targetY = idealY;
-            this.footX = MathUtils.lerp(this.footX, this.targetX, 0.1);
-            this.footY = MathUtils.lerp(this.footY, this.targetY, 0.1);
 
-            // Idle sway
-            const sway = Math.sin(Date.now() / 400) * 5 * s;
-            this.footX += Math.cos(bodyAngle + Math.PI / 2) * sway;
-            this.footY += Math.sin(bodyAngle + Math.PI / 2) * sway;
-        }
+            // Step Animation
+            if (this.stepProgress < 1) {
+                this.stepProgress += this.stepSpeed;
+                if (this.stepProgress > 1) this.stepProgress = 1;
 
-        // Step Animation
-        if (this.stepProgress < 1) {
-            this.stepProgress += this.stepSpeed;
-            if (this.stepProgress > 1) this.stepProgress = 1;
-
-            this.footX = MathUtils.lerp(this.stepStartX, this.targetX, this.stepProgress);
-            this.footY = MathUtils.lerp(this.stepStartY, this.targetY, this.stepProgress);
-        }
+                this.footX = MathUtils.lerp(this.stepStartX, this.targetX, this.stepProgress);
+                this.footY = MathUtils.lerp(this.stepStartY, this.targetY, this.stepProgress);
+            }
+        } // End override check
 
         // --- IK Solver ---
         const distRootToFoot = MathUtils.dist(rootX, rootY, this.footX, this.footY);
