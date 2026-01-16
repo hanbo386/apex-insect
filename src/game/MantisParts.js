@@ -1,4 +1,3 @@
-
 const MathUtils = {
     lerp: (a, b, t) => a + (b - a) * t,
     dist: (x1, y1, x2, y2) => Math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2),
@@ -205,14 +204,21 @@ export class MantisLeg {
         if (this.isFrontArm) {
             ctx.beginPath();
             ctx.moveTo(this.renderFootX, this.renderFootY);
-            const hookLen = 15 * s;
-            const angle = Math.atan2(this.renderFootY - this.kneeY, this.renderFootX - this.kneeX);
-            ctx.lineTo(
-                this.renderFootX + Math.cos(angle + Math.PI * 0.8 * this.side) * hookLen,
-                this.renderFootY + Math.sin(angle + Math.PI * 0.8 * this.side) * hookLen
-            );
-            ctx.lineWidth = 2 * s;
-            ctx.strokeStyle = '#4e6e34';
+
+            // Debugging: Make it VERY visible
+            // Hook
+            const hookLen = 20 * s;
+            const dx = this.renderFootX - this.kneeX;
+            const dy = this.renderFootY - this.kneeY;
+            const angle = Math.atan2(dy, dx);
+
+            const tipX = this.renderFootX + Math.cos(angle + Math.PI * 0.7 * this.side) * hookLen;
+            const tipY = this.renderFootY + Math.sin(angle + Math.PI * 0.7 * this.side) * hookLen;
+
+            ctx.lineTo(tipX, tipY);
+
+            ctx.lineWidth = 4 * s;
+            ctx.strokeStyle = '#8BC34A'; // Light Green
             ctx.stroke();
         }
     }

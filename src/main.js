@@ -88,7 +88,10 @@ document.getElementById('evolve-btn').addEventListener('click', () => {
 
 document.getElementById('xp-btn').addEventListener('click', () => {
     console.log("DEBUG: Cheat XP clicked.");
-    player.gainXp(500);
+    const needed = player.xpToNext - player.xp;
+    if (needed > 0) {
+        player.gainXp(needed);
+    }
     // Force focus back
     window.focus();
     if (document.getElementById('gameCanvas')) document.getElementById('gameCanvas').focus();

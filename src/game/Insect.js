@@ -121,7 +121,7 @@ export class Insect {
             ];
             // Init feet positions to current pos
             this.mantisLegs.forEach(leg => {
-                leg.update(this.thoraxPos, this.angle, this.vel);
+                leg.update(this.thoraxPos.x, this.thoraxPos.y, this.angle, this.vel.mag());
             });
             this.legs = []; // Clear standard legs
         }
@@ -497,8 +497,11 @@ export class Insect {
 
 
     update(input) {
-        // Immobilize if eating (Spider)
-        if (this.form === 'SPIDER' && this.predationState !== 'idle') {
+        // --- Update Predation Logic (Spider / Mantis) ---
+        this.updatePredation();
+
+        // Immobilize if eating (Spider / Mantis Grapple)
+        if ((this.form === 'SPIDER' || this.form === 'MANTIS') && this.predationState !== 'idle') {
             input = { up: false, down: false, left: false, right: false, shift: false };
         }
 
@@ -1264,19 +1267,24 @@ export class Insect {
     }
 
     drawMantis(ctx) {
+        const s = this.scale;
         // 1. Shadows
         ctx.save();
-        ctx.translate(this.pos.x + 5 * this.scale, this.pos.y + 5 * this.scale);
+        ctx.translate(this.pos.x + 5 * s, this.pos.y + 5 * s);
         ctx.rotate(this.angle);
         ctx.fillStyle = 'rgba(0,0,0,0.2)';
         ctx.beginPath();
         // Width 40*s, Height 15*s
-        ctx.ellipse(-10 * this.scale, 0, 40 * this.scale, 15 * this.scale, 0, 0, Math.PI * 2);
+        ctx.ellipse(-10 * s, 0, 40 * s, 15 * s, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
 
         // 2. Legs (Under body)
-        this.mantisLegs.forEach(leg => leg.draw(ctx));
+        // 2. Legs (Walking Legs & Scythes - Under body)
+        // Draw all legs (0-5) before body so they appear connected underneath.
+        for (let i = 0; i < 6; i++) {
+            if (this.mantisLegs[i]) this.mantisLegs[i].draw(ctx);
+        }
 
         // Draw Held Prey (Under body or Over? Legs are under body, prey held by legs should maybe be under too?)
         if (this.predationState === 'mantis_grapple' && this.heldPrey) {
@@ -1287,8 +1295,6 @@ export class Insect {
         ctx.save();
         ctx.translate(this.pos.x + this.lungeOffset.x, this.pos.y + this.lungeOffset.y);
         ctx.rotate(this.angle);
-
-        const s = this.scale;
 
         // --- Abdomen ---
         ctx.save();
@@ -1353,37 +1359,38 @@ export class Insect {
         ctx.fill();
 
         // Eyes
-        // Left
-        ctx.fillStyle = '#E1F5C4';
+        ctx.fillStyle = '#E1F5C4'; // Highlight
+        // Left Eye
         ctx.beginPath();
         ctx.ellipse(2 * s, -8 * s, 4 * s, 6 * s, -0.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#DDDDDD';
         ctx.fill();
-        ctx.fillStyle = 'black'; // Pupil
-        ctx.beginPath();
+        ctx.beginPath(); // Pupil
         ctx.arc(3 * s, -8 * s, 1.5 * s, 0, Math.PI * 2);
+        ctx.fillStyle = 'black';
         ctx.fill();
 
-        // Right
-        ctx.fillStyle = '#E1F5C4';
+        // Right Eye
         ctx.beginPath();
         ctx.ellipse(2 * s, 8 * s, 4 * s, 6 * s, 0.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#DDDDDD';
         ctx.fill();
-        ctx.fillStyle = 'black';
-        ctx.beginPath();
+        ctx.beginPath(); // Pupil
         ctx.arc(3 * s, 8 * s, 1.5 * s, 0, Math.PI * 2);
+        ctx.fillStyle = 'black';
         ctx.fill();
 
         // Antennae
         ctx.strokeStyle = '#4a3b22';
         ctx.lineWidth = 0.5 * s;
 
-        // Left
+        // Left Antenna
         ctx.beginPath();
         ctx.moveTo(12 * s, -2 * s);
         ctx.quadraticCurveTo((25 + Math.sin(this.animTimer * 2) * 5) * s, -15 * s, 35 * s, -20 * s);
         ctx.stroke();
 
-        // Right
+        // Right Antenna
         ctx.beginPath();
         ctx.moveTo(12 * s, 2 * s);
         ctx.quadraticCurveTo((25 + Math.cos(this.animTimer * 2) * 5) * s, 15 * s, 35 * s, 20 * s);
@@ -1391,6 +1398,8 @@ export class Insect {
 
         ctx.restore(); // End Head
         ctx.restore(); // End Body
+
+
     }
 
     drawCockroach(ctx) {
@@ -1554,7 +1563,7 @@ export class Insect {
         if (this.form === 'SPIDER') {
             return SPIDER_CONFIG.legLength * 0.8 * this.scale;
         } else if (this.form === 'MANTIS') {
-            return 60 * this.scale; // Scythe reach is long
+            return 120 * this.scale; // Significantly increased Scythe reach to ensure visible grapple
         }
         return 25 * this.scale;
     }
