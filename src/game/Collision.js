@@ -31,6 +31,12 @@ export function checkCollision(player, prey) {
         // Add two zones to cover it.
         preyZones.push({ pos: prey.pos.add(backDir.mult(40 * (prey.scale || 1))), radius: 15 * (prey.scale || 1) });
         preyZones.push({ pos: prey.pos.add(backDir.mult(70 * (prey.scale || 1))), radius: 20 * (prey.scale || 1) });
+    } else if (prey.form === 'TARANTULA') {
+        // Tarantula: Large Cephalothorax and Abdomen
+        // Cephalothorax: +4 scale, radius ~20
+        preyZones.push({ pos: prey.pos.add(new Vec2(Math.cos(prey.angle), Math.sin(prey.angle)).mult(4 * (prey.scale || 1))), radius: 20 * (prey.scale || 1) });
+        // Abdomen: -30 scale, radius ~30
+        preyZones.push({ pos: prey.pos.add(new Vec2(Math.cos(prey.angle), Math.sin(prey.angle)).mult(-30 * (prey.scale || 1))), radius: 30 * (prey.scale || 1) });
     } else {
         if (prey.abdomenPos) preyZones.push({ pos: prey.abdomenPos, radius: 5 * (prey.scale || 1) * radiusMult });
     }

@@ -5,6 +5,7 @@ import { SpiderLeg, SPIDER_CONFIG } from './SpiderParts.js';
 import { MantisLeg } from './MantisParts.js';
 import { CricketLeg } from './CricketParts.js';
 import { StickInsectLeg } from './StickInsectParts.js';
+import { TarantulaLeg } from './TarantulaParts.js';
 
 // --- Standardized Size Configuration ---
 // Defines the scale range for each evolution stage.
@@ -18,7 +19,8 @@ export const STAGE_CONFIG = {
     5: { name: 'SPIDER', startScale: 6.5, endScale: 10.0 },
     6: { name: 'MANTIS', startScale: 12.0, endScale: 18.0 },
     7: { name: 'CRICKET', startScale: 14.0, endScale: 20.0 },
-    8: { name: 'STICK_INSECT', startScale: 16.0, endScale: 24.0 }
+    8: { name: 'STICK_INSECT', startScale: 16.0, endScale: 24.0 },
+    9: { name: 'TARANTULA', startScale: 10.0, endScale: 14.0 }
 };
 
 /**
@@ -110,6 +112,11 @@ export class Insect {
         // --- Stick Insect Properties ---
         this.stickLegs = [];
         this.stickSegments = [];
+
+        // --- Tarantula Properties ---
+        this.tarantulaLegs = [];
+        this.stepGroup = 0; // Shared step group logic
+        this.moveDist = 0;
     }
 
     initLegs() {
@@ -176,6 +183,13 @@ export class Insect {
                 leg.updateScale(this.scale);
                 // leg.update(this) called in loop
             });
+            this.legs = [];
+        } else if (this.form === 'TARANTULA') {
+            this.tarantulaLegs = [];
+            for (let i = 0; i < 4; i++) {
+                this.tarantulaLegs.push(new TarantulaLeg(-1, i, this.scale));
+                this.tarantulaLegs.push(new TarantulaLeg(1, i, this.scale));
+            }
             this.legs = [];
         }
         else if (this.form === 'SPIDER') {
@@ -552,6 +566,11 @@ export class Insect {
 
             this.initLegs();
             formName = "竹节虫 (STICK INSECT)";
+        } else if (this.evolutionStage === 9) {
+            this.form = 'TARANTULA';
+            this.maxSpeed *= 1.1; // Faster?
+            this.initLegs();
+            formName = "狼蛛 (TARANTULA)";
         }
 
         if (this.onEvolve) this.onEvolve(formName, this.evolutionStage);
@@ -592,6 +611,7 @@ export class Insect {
             if (this.mantisLegs) this.mantisLegs.forEach(leg => leg.updateScale(this.scale));
             if (this.cricketLegs) this.cricketLegs.forEach(leg => leg.updateScale(this.scale));
             if (this.stickLegs) this.stickLegs.forEach(leg => leg.updateScale(this.scale));
+            if (this.tarantulaLegs) this.tarantulaLegs.forEach(leg => leg.updateScale(this.scale));
         } else {
             this.scale = effectiveTarget;
         }
@@ -711,6 +731,9 @@ export class Insect {
             return;
         } else if (this.form === 'STICK_INSECT') {
             this.drawStickInsect(ctx);
+            return;
+        } else if (this.form === 'TARANTULA') {
+            this.drawTarantula(ctx);
             return;
         }
 
@@ -1350,6 +1373,22 @@ export class Insect {
             this.stickLegs.forEach(leg => {
                 leg.updateScale(this.scale);
                 leg.update(this);
+            });
+            return;
+        } else if (this.form === 'TARANTULA') {
+            // Update Step Group
+            let speed = this.vel.mag();
+            if (speed > 0.2) {
+                this.moveDist += speed;
+                if (this.moveDist > 24 * this.scale) {
+                    this.stepGroup = 1 - this.stepGroup;
+                    this.moveDist = 0;
+                }
+            }
+
+            this.tarantulaLegs.forEach(leg => {
+                leg.updateScale(this.scale);
+                leg.update(this.pos, this.angle, this.vel, this.stepGroup);
             });
             return;
         }
@@ -2061,5 +2100,127 @@ export class Insect {
             this.stepGroup = (this.stepGroup + 1) % 2;
             this.lastStepChange = now;
         }
+    }
+
+    drawTarantula(ctx) {
+        const s = this.scale;
+
+        ctx.save();
+        // Shadow Pass
+        // Offset shadow slightly? User snippet used translate(15,20).
+        ctx.translate(5 * s, 5 * s);
+        ctx.globalAlpha = 0.2;
+        this.renderTarantulaBody(ctx, true);
+        ctx.restore();
+
+        // Main Pass
+        this.renderTarantulaBody(ctx, false);
+    }
+
+    renderTarantulaBody(ctx, isShadow) {
+        const s = this.scale;
+
+        // 1. Legs
+        this.tarantulaLegs.forEach(l => l.draw(ctx, isShadow));
+
+        ctx.save();
+        ctx.translate(this.pos.x, this.pos.y);
+        ctx.rotate(this.angle);
+
+        // Body Colors
+        const SETTINGS = {
+            spiderBlack: '#16100b',
+            spiderBrown: '#3a2a1a',
+            spiderFuzz: '#4a3a2a',
+            spiderSpike: '#2a1a10'
+        };
+
+        if (isShadow) {
+            ctx.fillStyle = '#000';
+            ctx.beginPath(); ctx.ellipse(4 * s, 0, 22 * s, 18 * s, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(-30 * s, 0, 35 * s, 26 * s, 0, 0, Math.PI * 2); ctx.fill();
+        } else {
+            // Helpers for Fuzz
+            const drawFringeFuzz = (x, y, rx, ry, count, longSpikes) => {
+                for (let i = 0; i < count; i++) {
+                    const ang = (i / count) * Math.PI * 2;
+                    const isLong = longSpikes && (i % 7 === 0);
+                    ctx.strokeStyle = isLong ? SETTINGS.spiderSpike : SETTINGS.spiderFuzz;
+                    ctx.lineWidth = (isLong ? 0.8 : 0.5) * s;
+                    const px = x + Math.cos(ang) * rx;
+                    const py = y + Math.sin(ang) * ry;
+                    const hLen = ((isLong ? 12 : 5) + Math.random() * 5) * s;
+                    ctx.beginPath();
+                    ctx.moveTo(px, py);
+                    ctx.lineTo(px + Math.cos(ang) * hLen, py + Math.sin(ang) * hLen);
+                    ctx.stroke();
+                }
+            };
+            const drawSurfaceFuzz = (x, y, rx, ry, count) => {
+                ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+                ctx.lineWidth = 0.5 * s;
+                for (let i = 0; i < count; i++) {
+                    const px = x + (Math.random() - 0.5) * rx * 1.5;
+                    const py = y + (Math.random() - 0.5) * ry * 1.5;
+                    const ang = Math.random() * Math.PI * 2;
+                    ctx.beginPath();
+                    ctx.moveTo(px, py);
+                    ctx.lineTo(px + Math.cos(ang) * (4 * s), py + Math.sin(ang) * (4 * s));
+                    ctx.stroke();
+                }
+            };
+            const drawJointTuftInside = (x, y, angle) => {
+                ctx.strokeStyle = SETTINGS.spiderFuzz;
+                ctx.lineWidth = 0.5 * s;
+                for (let i = 0; i < 4; i++) {
+                    const a = angle + (Math.random() - 0.5);
+                    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * (8 * s), y + Math.sin(a) * (8 * s)); ctx.stroke();
+                }
+            };
+
+            // 1. Abdomen
+            let abdGrad = ctx.createRadialGradient(-30 * s, -10 * s, 5 * s, -30 * s, 0, 40 * s);
+            abdGrad.addColorStop(0, '#3a2a1a');
+            abdGrad.addColorStop(1, '#0a0805');
+            ctx.fillStyle = abdGrad;
+            ctx.beginPath(); ctx.ellipse(-30 * s, 0, 35 * s, 26 * s, 0, 0, Math.PI * 2); ctx.fill();
+            drawFringeFuzz(-30 * s, 0, 35 * s, 26 * s, 60, true);
+            drawSurfaceFuzz(-30 * s, 0, 30 * s, 20 * s, 30);
+
+            // 2. Cephalothorax
+            let thoGrad = ctx.createRadialGradient(6 * s, -6 * s, 2 * s, 6 * s, 0, 25 * s);
+            thoGrad.addColorStop(0, '#2a1a0a');
+            thoGrad.addColorStop(1, '#050402');
+            ctx.fillStyle = thoGrad;
+            ctx.beginPath(); ctx.ellipse(4 * s, 0, 22 * s, 18 * s, 0, 0, Math.PI * 2); ctx.fill();
+            drawFringeFuzz(4 * s, 0, 22 * s, 18 * s, 40, false);
+            drawSurfaceFuzz(4 * s, 0, 18 * s, 14 * s, 20);
+
+            // 3. Eyes
+            ctx.fillStyle = '#000';
+            ctx.beginPath(); ctx.arc(18 * s, 5 * s, 3.5 * s, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(18 * s, -5 * s, 3.5 * s, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.beginPath(); ctx.arc(19 * s, 4 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(19 * s, -4 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
+
+            // 4. Palps
+            ctx.strokeStyle = '#120c06';
+            ctx.lineWidth = 6 * s;
+            let palps = [{ ang: -0.35, len: 22 }, { ang: 0.35, len: 22 }];
+            palps.forEach(p => {
+                ctx.beginPath();
+                ctx.moveTo(20 * s, p.ang * 12 * s);
+                let a = 0; // Relative angle?
+                let px = (28 + Math.cos(p.ang) * p.len) * s;
+                let py = (p.ang * 28) * s + Math.sin(Date.now() * 0.006) * 3 * s;
+                ctx.lineTo(px, py);
+                ctx.stroke();
+
+                let palpAngle = Math.atan2(py - p.ang * 12 * s, px - 20 * s);
+                drawJointTuftInside(px, py, palpAngle);
+            });
+        }
+        ctx.restore();
     }
 }
