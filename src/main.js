@@ -120,9 +120,8 @@ player.onEvolve = (formName, stage) => {
             // 3. Reset Player Logic
             // Start as Level 1 Spider (Level is already set to 1 by evolve())
             // Reset Scale to 1
-            player.scale = 1.0;
-            player.baseScale = 1.0;
-            player.targetScale = 1.0;
+            // Reset Scale to 1 (visual start only, handled by modifier)
+            // player.scale = 1.0;
             // Optionally increase world tier for difficulty scaling if desired, 
             // but user request was specific about resetting scale/zoom.
             // Calculate Scale Divisor. 
@@ -142,8 +141,31 @@ player.onEvolve = (formName, stage) => {
             // Cumulative: If we reset AGAIN later (e.g. at Mantis?), we'd multiply.
             player.worldScaleDivisor *= SPIDER_BASE_SCALE;
 
+            // FIX: DO NOT reset baseScale/targetScale to 1.0 manually!
+            // Insect.js relies on them being the Canonical Config values (6.5).
+            // We ONLY control the final scale via worldScaleModifier.
+            // player.baseScale = 1.0; // REMOVED
+            // player.targetScale = 1.0; // REMOVED
+
             if (!player.worldTier) player.worldTier = 1.0;
             player.worldTier += 1.0; // Increment Tier
+
+            // FIX: Set worldScaleModifier so Insect.js update() logic handles the shrinking persistently.
+            // Insect.js uses: effectiveTarget = targetScale * worldScaleModifier
+            // We want effectiveTarget to start at 1.0.
+            // targetScale (canonical) is SPIDER_BASE_SCALE (6.5).
+            // So worldScaleModifier = 1.0 / SPIDER_BASE_SCALE.
+            // Or more generally: 1.0 / player.worldScaleDivisor
+            player.worldScaleModifier = 1.0 / player.worldScaleDivisor;
+
+            // Update internal scale immediately to prevent 1-frame jump
+            player.scale = 1.0;
+            // We do NOT need to manually divide baseScale/targetScale if we rely on the modifier!
+            // But let's leave baseScale alone (canonical) or reset it? 
+            // Actually, Insect.js constructor sets baseScale from Config.
+            // levelUp() sets baseScale from Config.
+            // So manually dividing them here is futile if they get overwritten.
+            // The correct way is ensuring modifier is set.
 
             // Re-init legs at new scale 1.0
             player.initLegs();
