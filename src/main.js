@@ -5,6 +5,7 @@ import { Vec2 } from './game/Vec2.js';
 import { Creep } from './game/Creep.js';
 import { FloatingText } from './game/FloatingText.js';
 import { Particle } from './game/Particle.js';
+import { checkCollision } from './game/Collision.js';
 
 
 
@@ -412,9 +413,9 @@ function gameLoop() {
         }
 
         // 碰撞/进食检测
-        let eatDist = player.getEatRange() + (c.isRival ? 10 * c.scale : c.size);
-
-        if (c.pos.dist(player.pos) < eatDist) {
+        // 碰撞/进食检测
+        // Replaced simple dist check with robust body checking
+        if (checkCollision(player, c)) {
             // Restriction Logic:
             // 1. Stage Comparison First
             if (c.isRival) {
