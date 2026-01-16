@@ -3,6 +3,7 @@ import { Leg } from './Leg.js';
 import { CockroachLeg, CockroachAntenna } from './CockroachParts.js';
 import { SpiderLeg, SPIDER_CONFIG } from './SpiderParts.js';
 import { MantisLeg } from './MantisParts.js';
+import { CricketLeg } from './CricketParts.js';
 
 // --- Standardized Size Configuration ---
 // Defines the scale range for each evolution stage.
@@ -13,7 +14,9 @@ export const STAGE_CONFIG = {
     3: { name: 'PILLBUG', startScale: 2.6, endScale: 4.0 },
     4: { name: 'COCKROACH', startScale: 4.5, endScale: 6.0 },
     5: { name: 'SPIDER', startScale: 6.5, endScale: 10.0 },
-    6: { name: 'MANTIS', startScale: 12.0, endScale: 18.0 }
+    5: { name: 'SPIDER', startScale: 6.5, endScale: 10.0 },
+    6: { name: 'MANTIS', startScale: 12.0, endScale: 18.0 },
+    7: { name: 'CRICKET', startScale: 14.0, endScale: 20.0 }
 };
 
 /**
@@ -97,6 +100,10 @@ export class Insect {
         // Generic Predation (Lunge)
         this.lungeTimer = 0;
         this.lungeOffset = new Vec2(0, 0);
+
+        // --- Cricket Properties ---
+        this.cricketLegs = [];
+        this.cricketAntennaTimer = 0;
     }
 
     initLegs() {
@@ -124,6 +131,25 @@ export class Insect {
                 leg.update(this.thoraxPos.x, this.thoraxPos.y, this.angle, this.vel.mag());
             });
             this.legs = []; // Clear standard legs
+        }
+        else if (this.form === 'CRICKET') {
+            this.cricketLegs = [
+                // Right side
+                new CricketLeg(35, 10, 25, 30, 1),      // Front
+                new CricketLeg(10, 15, 30, 35, 1),      // Middle
+                new CricketLeg(-40, 10, 50, 60, 1, true), // Rear (Jumping leg)
+
+                // Left side
+                new CricketLeg(35, -10, 25, 30, -1),
+                new CricketLeg(10, -15, 30, 35, -1),
+                new CricketLeg(-40, -10, 50, 60, -1, true) // Rear
+            ];
+            // Init
+            this.cricketLegs.forEach(leg => {
+                leg.updateScale(this.scale);
+                leg.update(this.pos, this.angle, this.vel);
+            });
+            this.legs = [];
         }
         else if (this.form === 'SPIDER') {
             this.spiderLegs = [];
@@ -487,6 +513,12 @@ export class Insect {
             this.initLegs();
 
             formName = "螳螂 (MANTIS)";
+        } else if (this.evolutionStage === 7) {
+            this.form = 'CRICKET';
+            this.maxSpeed *= 1.2;
+
+            this.initLegs();
+            formName = "蟋蟀 (CRICKET)";
         }
 
         if (this.onEvolve) this.onEvolve(formName, this.evolutionStage);
@@ -523,7 +555,9 @@ export class Insect {
             if (this.leftCockroachAntenna) this.leftCockroachAntenna.updateScale(this.scale);
             if (this.rightCockroachAntenna) this.rightCockroachAntenna.updateScale(this.scale);
             this.spiderLegs.forEach(leg => leg.updateScale(this.scale));
+            this.spiderLegs.forEach(leg => leg.updateScale(this.scale));
             if (this.mantisLegs) this.mantisLegs.forEach(leg => leg.updateScale(this.scale));
+            if (this.cricketLegs) this.cricketLegs.forEach(leg => leg.updateScale(this.scale));
         } else {
             this.scale = effectiveTarget;
         }
@@ -637,6 +671,9 @@ export class Insect {
             return;
         } else if (this.form === 'PRIMITIVE') {
             this.drawPrimitive(ctx);
+            return;
+        } else if (this.form === 'CRICKET') {
+            this.drawCricket(ctx);
             return;
         }
 
@@ -1239,6 +1276,15 @@ export class Insect {
                 leg.update(this.pos.x, this.pos.y, this.angle, this.vel.mag());
             });
             return;
+        } else if (this.form === 'CRICKET') {
+            this.cricketAntennaTimer += 0.1 + (this.vel.mag() * 0.1);
+
+            let stepThreshold = 40;
+            this.cricketLegs.forEach(leg => {
+                leg.updateScale(this.scale);
+                leg.update(this.pos, this.angle, this.vel, stepThreshold);
+            });
+            return;
         }
 
         this.thoraxPos = this.pos;
@@ -1732,7 +1778,141 @@ export class Insect {
         ctx.strokeStyle = "rgba(0,0,0,0.3)";
         ctx.lineWidth = 1;
         ctx.stroke();
+
     }
+
+    drawCricket(ctx) {
+        ctx.save();
+
+        // 1. Legs (Under Body)
+        this.cricketLegs.forEach(leg => {
+            leg.draw(ctx);
+        });
+
+        // Transform to Body Center
+        ctx.translate(this.pos.x, this.pos.y);
+        ctx.rotate(this.angle);
+        // Note: Scale is handled via leg.scale. But for body we use this.scale manually or apply ctx.scale?
+        // In snippet: `ctx.scale(this.scale, this.scale);`
+        // Existing Insect methods often use `* s` manually.
+        // Let's check `drawMantis`. It uses `const s = this.scale` and multiplies.
+        // The snippet used `ctx.scale`. 
+        // Mixing `ctx.scale` could affect stroke width if not careful, but snippet did `ctx.scale` and standard linewidths.
+        // I will use manual multiplication `* s` to be consistent with `Insect.js` style if possible, 
+        // OR just use `ctx.scale` if the snippet logic is complex with hardcoded coords.
+        // Snippet uses: `ctx.ellipse(-25, 0, 45, 22 ...)` hardcoded.
+        // So I MUST use `ctx.scale`.
+
+        ctx.scale(this.scale, this.scale);
+
+        // 2. Antennae
+        ctx.strokeStyle = "#3e2723";
+        ctx.lineWidth = 1.5; // Scaled by previous ctx.scale
+        ctx.lineCap = "round";
+
+        for (let side = -1; side <= 1; side += 2) {
+            ctx.beginPath();
+            ctx.moveTo(40, side * 5); // Head start
+
+            let segments = 10;
+            let length = 90;
+            let startX = 40;
+            let startY = side * 5;
+
+            for (let i = 0; i <= segments; i++) {
+                let t = i / segments;
+                // Bend
+                let bend = Math.sin(this.cricketAntennaTimer + i * 0.5) * 10 * (this.vel.mag() > 0.1 ? 2 : 0.5);
+                // Drag (Inertia)
+                // Use simplified drag based on velocity? 
+                // this.vel is global world vel. Relative to body?
+                // `this.vel.mag()` is scalar speed.
+                // In snippet: `let drag = -this.vel.mag() * 5 * side;`
+                // This assumes moving forward drags them back.
+                let drag = -this.vel.mag() * 5 * side; // Simplified direction assumption
+
+                let curX = startX + (length / segments) * i;
+                let curY = startY + (side * i * 4) + (bend * t) + (drag * t * t);
+
+                ctx.lineTo(curX, curY);
+            }
+            ctx.stroke();
+        }
+
+        // 3. Body Parts (Back to Front)
+
+        // Abdomen
+        ctx.fillStyle = "#4e342e"; // Dark Brown
+        ctx.beginPath();
+        ctx.ellipse(-25, 0, 45, 22, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Segments
+        ctx.strokeStyle = "rgba(0,0,0,0.3)";
+        ctx.lineWidth = 2;
+        for (let i = 1; i < 5; i++) {
+            ctx.beginPath();
+            ctx.arc(-25 - i * 8, 0, 20 - i * 2, -Math.PI / 3, Math.PI / 3);
+            ctx.stroke();
+        }
+
+        // Highlight
+        ctx.fillStyle = "rgba(255,255,255,0.1)";
+        ctx.beginPath();
+        ctx.ellipse(-25, -8, 30, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Thorax
+        ctx.fillStyle = "#3e2723"; // Deeper
+        ctx.beginPath();
+        // roundRect might not be supported in all envs? standard in modern browsers.
+        if (ctx.roundRect) {
+            ctx.roundRect(10, -18, 30, 36, 10);
+        } else {
+            ctx.rect(10, -18, 30, 36);
+        }
+        ctx.fill();
+
+        // Highlight
+        ctx.fillStyle = "rgba(255,255,255,0.15)";
+        ctx.beginPath();
+        ctx.ellipse(25, -5, 10, 6, -0.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Head
+        ctx.fillStyle = "#271c19"; // Almost Black
+        ctx.beginPath();
+        ctx.arc(45, 0, 14, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Eyes
+        ctx.fillStyle = "#111";
+        ctx.beginPath();
+        ctx.ellipse(50, -8, 4, 6, 0.5, 0, Math.PI * 2); // Left
+        ctx.ellipse(50, 8, 4, 6, -0.5, 0, Math.PI * 2); // Right
+        ctx.fill();
+
+        // Eye Highlight
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(51, -8, 1, 0, Math.PI * 2);
+        ctx.arc(51, 8, 1, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Cerci (Tail)
+        ctx.strokeStyle = "#4e342e";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-65, -5);
+        ctx.lineTo(-85, -15);
+        ctx.moveTo(-65, 5);
+        ctx.lineTo(-85, 15);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+
 
     toggleGait() {
         // Debounce toggle to prevent rapid flickering

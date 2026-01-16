@@ -36,7 +36,7 @@ function updateUI() {
     // 4: 蟑螂 (Cockroach)
     // 5: 蜘蛛 (Spider)
     // 6: 螳螂 (Mantis)
-    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)", "蜘蛛 (Spider)", "螳螂 (Mantis)"];
+    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)", "蜘蛛 (Spider)", "螳螂 (Mantis)", "蟋蟀 (Cricket)"];
     let displayForm = formNames[player.evolutionStage] || `MARK-${player.evolutionStage}`;
 
     // Relative Level Calculation
@@ -492,7 +492,8 @@ function gameLoop() {
     // We want Zoom ~1.0 for the New World. So treating it closer to standard size (e.g. 100-120) makes sense.
     // This lets legs clip off screen edges slightly but keeps the "Main Character" feel.
     if (player.form === 'SPIDER') baseRadius = 120;
-    if (player.form === 'MANTIS') baseRadius = 130; // Scythes are huge. Force some zoom out but not 10x.
+    if (player.form === 'MANTIS') baseRadius = 130;
+    if (player.form === 'CRICKET') baseRadius = 140;
 
     let visualSize = player.scale * baseRadius;
     let desiredZoom = (minDimension * 0.15) / visualSize;
