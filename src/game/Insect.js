@@ -4,6 +4,7 @@ import { CockroachLeg, CockroachAntenna } from './CockroachParts.js';
 import { SpiderLeg, SPIDER_CONFIG } from './SpiderParts.js';
 import { MantisLeg } from './MantisParts.js';
 import { CricketLeg } from './CricketParts.js';
+import { StickInsectLeg } from './StickInsectParts.js';
 
 // --- Standardized Size Configuration ---
 // Defines the scale range for each evolution stage.
@@ -16,7 +17,8 @@ export const STAGE_CONFIG = {
     5: { name: 'SPIDER', startScale: 6.5, endScale: 10.0 },
     5: { name: 'SPIDER', startScale: 6.5, endScale: 10.0 },
     6: { name: 'MANTIS', startScale: 12.0, endScale: 18.0 },
-    7: { name: 'CRICKET', startScale: 14.0, endScale: 20.0 }
+    7: { name: 'CRICKET', startScale: 14.0, endScale: 20.0 },
+    8: { name: 'STICK_INSECT', startScale: 16.0, endScale: 24.0 }
 };
 
 /**
@@ -104,6 +106,10 @@ export class Insect {
         // --- Cricket Properties ---
         this.cricketLegs = [];
         this.cricketAntennaTimer = 0;
+
+        // --- Stick Insect Properties ---
+        this.stickLegs = [];
+        this.stickSegments = [];
     }
 
     initLegs() {
@@ -148,6 +154,27 @@ export class Insect {
             this.cricketLegs.forEach(leg => {
                 leg.updateScale(this.scale);
                 leg.update(this.pos, this.angle, this.vel);
+            });
+            this.legs = [];
+        } else if (this.form === 'STICK_INSECT') {
+            this.stickLegs = [
+                new StickInsectLeg(-1, 0, 120, this.scale), new StickInsectLeg(1, 0, 120, this.scale),
+                new StickInsectLeg(-1, 1, 180, this.scale), new StickInsectLeg(1, 1, 180, this.scale),
+                new StickInsectLeg(-1, 2, 200, this.scale), new StickInsectLeg(1, 2, 200, this.scale)
+            ];
+
+            // Init Segments if empty
+            if (this.stickSegments.length === 0) {
+                let segCounts = 12;
+                // Initialize behind player
+                for (let i = 0; i < segCounts; i++) {
+                    this.stickSegments.push(this.pos.sub(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(i * 18 * this.scale)));
+                }
+            }
+
+            this.stickLegs.forEach(leg => {
+                leg.updateScale(this.scale);
+                // leg.update(this) called in loop
             });
             this.legs = [];
         }
@@ -519,6 +546,12 @@ export class Insect {
 
             this.initLegs();
             formName = "蟋蟀 (CRICKET)";
+        } else if (this.evolutionStage === 8) {
+            this.form = 'STICK_INSECT';
+            this.maxSpeed *= 1.1;
+
+            this.initLegs();
+            formName = "竹节虫 (STICK INSECT)";
         }
 
         if (this.onEvolve) this.onEvolve(formName, this.evolutionStage);
@@ -558,6 +591,7 @@ export class Insect {
             this.spiderLegs.forEach(leg => leg.updateScale(this.scale));
             if (this.mantisLegs) this.mantisLegs.forEach(leg => leg.updateScale(this.scale));
             if (this.cricketLegs) this.cricketLegs.forEach(leg => leg.updateScale(this.scale));
+            if (this.stickLegs) this.stickLegs.forEach(leg => leg.updateScale(this.scale));
         } else {
             this.scale = effectiveTarget;
         }
@@ -674,6 +708,9 @@ export class Insect {
             return;
         } else if (this.form === 'CRICKET') {
             this.drawCricket(ctx);
+            return;
+        } else if (this.form === 'STICK_INSECT') {
+            this.drawStickInsect(ctx);
             return;
         }
 
@@ -1283,6 +1320,36 @@ export class Insect {
             this.cricketLegs.forEach(leg => {
                 leg.updateScale(this.scale);
                 leg.update(this.pos, this.angle, this.vel, stepThreshold);
+            });
+            return;
+        } else if (this.form === 'STICK_INSECT') {
+            // Update Segments
+            if (this.stickSegments.length > 0) {
+                this.stickSegments[0] = this.pos.clone(); // Head follows pos exactly (or slight offset?)
+                // Reference: `this.segments[0] = this.pos;`
+
+                for (let i = 1; i < this.stickSegments.length; i++) {
+                    let prev = this.stickSegments[i - 1];
+                    let curr = this.stickSegments[i];
+                    let dist = prev.dist(curr);
+                    let targetDist = (i <= 4 ? 16 : 20) * this.scale;
+
+                    if (dist > 0) {
+                        let overlap = dist - targetDist;
+                        let dir = curr.sub(prev).normalize(); // Vector from prev to curr? No.
+                        // We want to pull curr towards prev.
+                        // Reference: `curr.sub(dir.mult(overlap * 0.8))` where dir = curr.sub(prev).
+                        // If dist > target, overlap > 0.
+                        // curr is pulled back towards prev.
+                        this.stickSegments[i] = curr.sub(dir.mult(overlap * 0.8));
+                    }
+                }
+            }
+
+            // Update Legs
+            this.stickLegs.forEach(leg => {
+                leg.updateScale(this.scale);
+                leg.update(this);
             });
             return;
         }
@@ -1913,6 +1980,79 @@ export class Insect {
     }
 
 
+
+    drawStickInsect(ctx) {
+        // 1. Legs (Bottom)
+        this.stickLegs.forEach(leg => leg.draw(ctx, this));
+
+        // 2. Head Antennae
+        let head = this.stickSegments[0] || this.pos;
+
+        ctx.strokeStyle = "#3E2723";
+        ctx.lineWidth = 1 * this.scale;
+        [0.2, -0.2].forEach(off => {
+            let antLen = 90 * this.scale;
+            let antAngle = this.angle + off;
+            let ant = new Vec2(Math.cos(antAngle), Math.sin(antAngle)).mult(antLen);
+
+            let twitch = Math.sin(Date.now() / 200) * 5 * this.scale;
+
+            ctx.beginPath();
+            ctx.moveTo(head.x, head.y);
+            ctx.quadraticCurveTo(
+                head.x + ant.x * 0.5, head.y + ant.y * 0.5,
+                head.x + ant.x + twitch, head.y + ant.y
+            );
+            ctx.stroke();
+        });
+
+        // 3. Body Segments
+        for (let i = 0; i < this.stickSegments.length - 1; i++) {
+            let curr = this.stickSegments[i];
+            let next = this.stickSegments[i + 1];
+            let segAngle = Math.atan2(next.y - curr.y, next.x - curr.x);
+            let len = curr.dist(next);
+
+            ctx.save();
+            ctx.translate(curr.x, curr.y);
+            ctx.rotate(segAngle);
+
+            let width = (i === 0 ? 7 : (i < 5 ? 5 : 3.5)) * this.scale;
+
+            // Gradient
+            let grad = ctx.createLinearGradient(0, -width, 0, width);
+            grad.addColorStop(0, "#3E2723");
+            grad.addColorStop(0.5, "#8D6E63");
+            grad.addColorStop(1, "#3E2723");
+
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            // Round Rect shim
+            if (ctx.roundRect) ctx.roundRect(0, -width / 2, len + 1, width, width / 2);
+            else ctx.rect(0, -width / 2, len + 1, width);
+            ctx.fill();
+
+            // Joint Node
+            ctx.fillStyle = "#3E2723";
+            ctx.beginPath();
+            ctx.arc(0, 0, width / 2 + 0.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // 4. Eyes
+        ctx.save();
+        ctx.translate(head.x, head.y);
+        ctx.rotate(this.angle);
+        ctx.fillStyle = "#000";
+        ctx.beginPath();
+        let eyeOffset = 3 * this.scale;
+        let eyeSize = 1.8 * this.scale;
+        ctx.arc(eyeOffset, -eyeOffset, eyeSize, 0, Math.PI * 2);
+        ctx.arc(eyeOffset, eyeOffset, eyeSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
 
     toggleGait() {
         // Debounce toggle to prevent rapid flickering
