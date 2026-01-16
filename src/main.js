@@ -489,7 +489,7 @@ function gameLoop() {
     // We want Zoom ~1.0 for the New World. So treating it closer to standard size (e.g. 100-120) makes sense.
     // This lets legs clip off screen edges slightly but keeps the "Main Character" feel.
     if (player.form === 'SPIDER') baseRadius = 120;
-    if (player.form === 'MANTIS') baseRadius = 1200; // Scythes are huge. Force extreme zoom out.
+    if (player.form === 'MANTIS') baseRadius = 130; // Scythes are huge. Force some zoom out but not 10x.
 
     let visualSize = player.scale * baseRadius;
     let desiredZoom = (minDimension * 0.15) / visualSize;

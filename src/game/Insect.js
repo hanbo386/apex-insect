@@ -478,10 +478,11 @@ export class Insect {
 
             // Compensation for BaseRadius jump (300 -> 1200)
             // Huge jump. Shrink significantly.
-            let shrink = 0.25;
-            this.baseScale *= shrink;
-            this.targetScale *= shrink;
-            this.scale *= shrink;
+            // REMOVED: Legacy logic. We want canonical size.
+            // let shrink = 0.25;
+            // this.baseScale *= shrink;
+            // this.targetScale *= shrink;
+            // this.scale *= shrink;
 
             this.initLegs();
 
