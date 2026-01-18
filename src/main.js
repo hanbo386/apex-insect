@@ -190,6 +190,7 @@ let camera = new Vec2(0, 0);
 const creeps = [];
 const texts = []; // 浮动文字
 const particles = []; // 粒子效果
+const ripples = []; // 地面震波
 const MAX_CREEPS = 4;
 
 function createParticles(x, y, color, size = 4, count = 8) {
@@ -199,6 +200,56 @@ function createParticles(x, y, color, size = 4, count = 8) {
         particles.push(new Particle(x, y, color, s));
     }
 }
+
+// Visual Effects Classes from Reference
+class GroundRipple {
+    constructor(x, y, maxRadius, color) {
+        this.x = x; this.y = y; this.radius = 0;
+        this.maxRadius = maxRadius; this.life = 1.0; this.color = color;
+        this.phases = [0, -0.2, -0.4];
+    }
+    update(dt) { this.life -= dt * 1.5; }
+    draw(ctx) {
+        if (this.life <= 0) return;
+        ctx.save();
+        const coreAlpha = Math.max(0, this.life * 0.8);
+        const coreGrad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.maxRadius * 0.5 * (1 - this.life));
+        coreGrad.addColorStop(0, `rgba(255, 255, 255, ${coreAlpha})`);
+        coreGrad.addColorStop(0.2, `rgba(255, 200, 0, ${coreAlpha})`);
+        coreGrad.addColorStop(1, 'rgba(255, 61, 0, 0)');
+        ctx.fillStyle = coreGrad;
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.maxRadius * (1 - this.life), 0, Math.PI * 2); ctx.fill();
+
+        this.phases.forEach((p, i) => {
+            const currentLife = this.life + p;
+            if (currentLife <= 0 || currentLife > 1) return;
+            const progress = 1 - Math.pow(currentLife, 2);
+            const r = this.maxRadius * progress;
+            const alpha = currentLife * 0.6;
+            ctx.globalAlpha = alpha;
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = (3 - i) * currentLife * 3;
+            ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.stroke();
+        });
+        ctx.restore();
+    }
+}
+
+// Hook for Titan Leg Impact
+// The Insect instance needs access to this.
+// Since 'player' is created as new Insect(), let's attach this method to the game instance or expose it global/player.
+player.game = {
+    triggerImpact: (x, y, power, shouldShake) => {
+        // power ~5. Scale ~ player.scale?
+        ripples.push(new GroundRipple(x, y, 120 + power * 5 * player.scale, '#ff3d00'));
+        // Ignore shake for now or implement camera shake logic
+        if (shouldShake) {
+            // implemented via camera offset in draw loop if desired
+            cameraShake = Math.min(10, cameraShake + power * 0.6);
+        }
+    }
+};
+let cameraShake = 0;
 
 function spawnCreeps() {
     // Dynamic Spawn Range based on Zoom
@@ -228,6 +279,23 @@ function spawnCreeps() {
             targetStage = player.evolutionStage;
         } else {
             targetStage = player.evolutionStage + 1;
+        }
+    }
+
+    // --- Unique Titan & Boss Logic ---
+    // If player is TITAN, they are the Sovereign. NO higher or equal stage NPCs can spawn.
+    // Titan is Stage 13.
+    // If Player is Titan, Max spawn stage is 12 (Scorpion).
+    if (player.form === 'TITAN') {
+        if (targetStage >= 13) {
+            targetStage = 12; // Downgrade to Scorpion
+        }
+    }
+
+    // Also keep the previous rule: If target is TITAN (13), and player is SCORPION (12), downgrade.
+    if (targetStage === 13) {
+        if (player.evolutionStage >= 12) {
+            targetStage = 12;
         }
     }
 
@@ -339,14 +407,88 @@ function gameLoop() {
 
         if (c.isRival) {
             // Rival AI Logic
-            c.angle += (Math.random() - 0.5) * 0.2;
-            // Scale speed with size so they don't look like they are crawling
-            let npcSpeed = 1.5 * (c.scale || 1.0);
-            c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(npcSpeed);
-            c.pos = c.pos.add(c.vel);
+            if (player.form === 'TITAN') {
+                // Swarm Logic: Follow the Sovereign
+                // Smoothly steer towards player but keep distance
+                let diff = player.pos.sub(c.pos);
+                let dist = diff.mag();
+                let desiredDist = 150 * player.scale;
 
-            // Sync speed for animation
-            c.speed = npcSpeed;
+                let targetPos = player.pos; // Default to player center
+
+                // If too close, circle or back away?
+                // Simple flocking: Move towards player
+                let angleToPlayer = Math.atan2(diff.y, diff.x);
+
+                // Steer angle smoothly
+                let currentAngle = c.angle;
+                let angleDiff = angleToPlayer - currentAngle;
+                // Normalize angle
+                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+
+                c.angle += Math.max(-0.05, Math.min(0.05, angleDiff));
+
+                let npcSpeed = 3.0 * (c.scale || 1.0); // Faster to keep up
+                if (dist < desiredDist) npcSpeed *= 0.5; // Slow down if close
+
+                c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(npcSpeed);
+                c.pos = c.pos.add(c.vel);
+                c.speed = npcSpeed;
+
+                c.update(c.pos, c.angle, c.vel); // Update legs
+            } else {
+                // Normal AI
+                c.angle += (Math.random() - 0.5) * 0.2;
+                // Scale speed with size so they don't look like they are crawling
+                let npcSpeed = 1.5 * (c.scale || 1.0);
+                c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(npcSpeed);
+                c.pos = c.pos.add(c.vel);
+
+                // Sync speed for animation
+                c.speed = npcSpeed;
+
+                // Insect.update() usually handles this internally if passed input?
+                // But NPC Insects here are simplified?
+                // Insect.js update() takes (input, dt).
+                // Here we manually pos += vel? 
+                // We should probably call c.update(null, dt) if we want full logic.
+                // But checking code at line 300+, we see `c.update(c.pos, c.angle...)` being called?
+                // Ah, line 403 in original: `c.updateVisuals` perhaps?
+                // Let's assume standard update logic for legged insects is needed.
+                // Looking at Insect.js, update() does pos += vel.
+                // So here in main loop if we do pos += vel MANUALLY, we might be double moving if we call c.update()?
+                // Let's look at `Insect.js` again. `update(input)` calculates vel from input.
+                // NPCs don't have input.
+                // So manual pos update is correct.
+                // Then we need to update legs.
+
+                // Accessing internal leg update if available, or just rely on visual update.
+                // Actually Insect.js:883 calls leg.update().
+                // We need to call something that updates legs.
+                // `c.updateVisuals()`? No, it's inside `update`.
+                // Let's check `Insect.js`.
+
+                // Workaround: Call leg updates manually or mock update?
+                // Best to invoke `c.updateArms/Legs`?
+                // Insect.js `update` method calls `this.updateVisuals()` AND leg update.
+                // If we don't call c.update(), legs won't move.
+                // We should simulate input? 
+                // Or just set `c.vel` and assume `c.draw` handles it?
+                // `c.draw` needs `thoraxPos` updated.
+                c.thoraxPos = c.pos; // Ensure thorax follows
+
+                // Manually update legs (Copied from Insect.js logic roughly or relying on what was there)
+                // Original file had `c.update(c.pos...)`? No, the previous view didn't show the end of the loop.
+                // Let's assume we need to update legs.
+                if (c.legs) {
+                    c.legs.forEach(l => {
+                        // Assuming Leg.update takes (pos, angle, vel) or similar
+                        // TitanLeg takes (dt, vel). Standard Leg takes (pos, angle, vel, moving).
+                        if (l.update) l.update(c.pos, c.angle, c.vel, true);
+                    });
+                }
+            }
             c.updateVisuals();
 
 
@@ -392,6 +534,15 @@ function gameLoop() {
             // Restriction Logic:
             // 1. Stage Comparison First
             if (c.isRival) {
+                // TITAN Swarm Leader Logic: No eating, no attacking for TITAN
+                if (player.form === 'TITAN') {
+                    // Do nothing (don't eat, don't get hurt)
+                    // Just push gently to avoid clipping
+                    let pushDir = c.pos.sub(player.pos).normalize();
+                    c.pos = c.pos.add(pushDir.mult(5));
+                    continue;
+                }
+
                 if (c.evolutionStage > player.evolutionStage) {
                     // Enemy Stage is Higher: CANNOT EAT. Bounce.
                     let pushDir = c.pos.sub(player.pos).normalize();
@@ -446,6 +597,30 @@ function gameLoop() {
         particles[i].update();
         if (particles[i].life <= 0) particles.splice(i, 1);
     }
+    for (let i = ripples.length - 1; i >= 0; i--) {
+        ripples[i].update(0.016);
+        if (ripples[i].life <= 0) ripples.splice(i, 1);
+    }
+
+    // Titan Particle Logic
+    if (player.form === 'TITAN' && player.vel.mag() > 50 * player.scale) {
+        if (particles.length < 100) {
+            particles.push(new Particle(
+                player.pos.x + (Math.random() - 0.5) * 300 * player.scale,
+                player.pos.y + (Math.random() - 0.5) * 300 * player.scale,
+                '#ff3d00', // Titan dust color
+                Math.random() * 5 * player.scale // size
+            ));
+            // Override velocity in particle specific handling? 
+            // Existing Particle class is simple. Let's rely on default behavior or tweak.
+            // Reference: vx = -vel.x * 0.05
+            let p = particles[particles.length - 1];
+            p.vel.x = -player.vel.x * 0.05;
+            p.vel.y = -player.vel.y * 0.05;
+        }
+    }
+
+    cameraShake = Math.max(0, cameraShake - 0.5);
 
 
     let targetCamX = player.pos.x - width / 2;
@@ -472,7 +647,9 @@ function gameLoop() {
     if (player.form === 'TARANTULA') baseRadius = 130;
     if (player.form === 'RHINO_BEETLE') baseRadius = 160;
     if (player.form === 'CENTIPEDE') baseRadius = 220;
+    if (player.form === 'CENTIPEDE') baseRadius = 220;
     if (player.form === 'SCORPION') baseRadius = 180;
+    if (player.form === 'TITAN') baseRadius = 450;
 
     let visualSize = player.scale * baseRadius;
     let desiredZoom = (minDimension * 0.15) / visualSize;
@@ -503,8 +680,16 @@ function gameLoop() {
     // Camera
     ctx.translate(-camera.x, -camera.y);
 
+    if (cameraShake > 0) {
+        ctx.translate((Math.random() - 0.5) * cameraShake, (Math.random() - 0.5) * cameraShake);
+    }
+
     // Environment: No scale trickery needed. Just draw.
     // Use worldTier to scale texture density if we want? 
+
+    // Draw Ripples (Under environment or on top?) Reference draws ripples AFTER background but BEFORE insect.
+    ripples.forEach(r => r.draw(ctx));
+
     // Actually, since player shrunk, the existing grid (500px) NOW looks huge (rel to player).
     // So we don't need to change environment drawing AT ALL.
     // The "Giant Grid" effect happens naturally because the player is tiny!
