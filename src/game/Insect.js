@@ -19,14 +19,13 @@ export const STAGE_CONFIG = {
     3: { name: 'PILLBUG', startScale: 2.6, endScale: 4.0 },
     4: { name: 'COCKROACH', startScale: 4.5, endScale: 6.0 },
     5: { name: 'SPIDER', startScale: 6.5, endScale: 10.0 },
-    5: { name: 'SPIDER', startScale: 6.5, endScale: 10.0 },
     6: { name: 'MANTIS', startScale: 12.0, endScale: 18.0 },
     7: { name: 'CRICKET', startScale: 20.0, endScale: 26.0 },
     8: { name: 'STICK_INSECT', startScale: 28.0, endScale: 36.0 },
-    9: { name: 'TARANTULA', startScale: 40.0, endScale: 55.0 },
-    10: { name: 'RHINO_BEETLE', startScale: 60.0, endScale: 80.0 },
-    11: { name: 'CENTIPEDE', startScale: 70.0, endScale: 100.0 },
-    12: { name: 'SCORPION', startScale: 50.0, endScale: 70.0 }
+    9: { name: 'RHINO_BEETLE', startScale: 50.0, endScale: 70.0 },
+    10: { name: 'TARANTULA', startScale: 80.0, endScale: 110.0 },
+    11: { name: 'CENTIPEDE', startScale: 120.0, endScale: 160.0 },
+    12: { name: 'SCORPION', startScale: 180.0, endScale: 240.0 }
 };
 
 /**
@@ -657,14 +656,14 @@ export class Insect {
             this.initLegs();
             formName = "竹节虫 (STICK INSECT)";
         } else if (this.evolutionStage === 9) {
+            this.form = 'RHINO_BEETLE';
+            this.initLegs();
+            formName = "独角仙 (RHINO BEETLE)";
+        } else if (this.evolutionStage === 10) {
             this.form = 'TARANTULA';
             this.maxSpeed *= 1.1; // Faster?
             this.initLegs();
             formName = "狼蛛 (TARANTULA)";
-        } else if (this.evolutionStage === 10) {
-            this.form = 'RHINO_BEETLE';
-            this.initLegs();
-            formName = "独角仙 (RHINO BEETLE)";
         } else if (this.evolutionStage === 11) {
             this.form = 'CENTIPEDE';
             this.initLegs();
