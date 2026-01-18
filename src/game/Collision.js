@@ -37,6 +37,14 @@ export function checkCollision(player, prey) {
         preyZones.push({ pos: prey.pos.add(new Vec2(Math.cos(prey.angle), Math.sin(prey.angle)).mult(4 * (prey.scale || 1))), radius: 20 * (prey.scale || 1) });
         // Abdomen: -30 scale, radius ~30
         preyZones.push({ pos: prey.pos.add(new Vec2(Math.cos(prey.angle), Math.sin(prey.angle)).mult(-30 * (prey.scale || 1))), radius: 30 * (prey.scale || 1) });
+    } else if (prey.form === 'CENTIPEDE' && prey.centipedeSegments) {
+        prey.centipedeSegments.forEach(seg => {
+            // Segment is object {x, y, angle}, convert to Vec2 or use raw check?
+            // Existing logic uses Vec2 or object with .x .y
+            // collision loop uses .pos.x .pos.y.
+            // So we need to push objects that look like { pos: {x,y}, radius }.
+            preyZones.push({ pos: new Vec2(seg.x, seg.y), radius: 10 * (prey.scale || 1) });
+        });
     } else {
         if (prey.abdomenPos) preyZones.push({ pos: prey.abdomenPos, radius: 5 * (prey.scale || 1) * radiusMult });
     }

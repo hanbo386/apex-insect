@@ -37,7 +37,7 @@ function updateUI() {
     // 4: 蟑螂 (Cockroach)
     // 5: 蜘蛛 (Spider)
     // 6: 螳螂 (Mantis)
-    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)", "蜘蛛 (Spider)", "螳螂 (Mantis)", "蟋蟀 (Cricket)", "竹节虫 (Stick Insect)", "狼蛛 (Tarantula)", "独角仙 (Rhino Beetle)"];
+    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)", "蜘蛛 (Spider)", "螳螂 (Mantis)", "蟋蟀 (Cricket)", "竹节虫 (Stick Insect)", "狼蛛 (Tarantula)", "独角仙 (Rhino Beetle)", "巨型蜈蚣 (Centipede)"];
     let displayForm = formNames[player.evolutionStage] || `MARK-${player.evolutionStage}`;
 
     // Relative Level Calculation
@@ -498,6 +498,7 @@ function gameLoop() {
     if (player.form === 'STICK_INSECT') baseRadius = 150;
     if (player.form === 'TARANTULA') baseRadius = 130;
     if (player.form === 'RHINO_BEETLE') baseRadius = 160;
+    if (player.form === 'CENTIPEDE') baseRadius = 220;
 
     let visualSize = player.scale * baseRadius;
     let desiredZoom = (minDimension * 0.15) / visualSize;

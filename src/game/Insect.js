@@ -7,6 +7,7 @@ import { CricketLeg } from './CricketParts.js';
 import { StickInsectLeg } from './StickInsectParts.js';
 import { TarantulaLeg } from './TarantulaParts.js';
 import { RhinoBeetleLeg } from './RhinoBeetleParts.js';
+import { CentipedeLeg } from './CentipedeParts.js';
 
 // --- Standardized Size Configuration ---
 // Defines the scale range for each evolution stage.
@@ -22,7 +23,8 @@ export const STAGE_CONFIG = {
     7: { name: 'CRICKET', startScale: 20.0, endScale: 26.0 },
     8: { name: 'STICK_INSECT', startScale: 28.0, endScale: 36.0 },
     9: { name: 'TARANTULA', startScale: 40.0, endScale: 55.0 },
-    10: { name: 'RHINO_BEETLE', startScale: 60.0, endScale: 80.0 }
+    10: { name: 'RHINO_BEETLE', startScale: 60.0, endScale: 80.0 },
+    11: { name: 'CENTIPEDE', startScale: 70.0, endScale: 100.0 }
 };
 
 /**
@@ -123,6 +125,14 @@ export class Insect {
         // --- Rhino Beetle Properties ---
         this.rhinoLegs = [];
         this.rhinoWalkCycle = 0;
+
+        // --- Centipede Properties ---
+        this.centipedeSegments = []; // Array of {x, y, angle}
+        this.centipedeLegs = []; // Legs are dynamic or stored? Reference generated them on fly or just drawn? 
+        // Reference: `drawLeg` called inside loop. We can use a single `CentipedeLeg` class instance as helper or store them.
+        // Let's store them to maintain state/scale if needed. But Reference `drawLeg` is stateless except phase.
+        // My CentipedeLeg class is stateless-ish.
+        this.centipedeLegPhase = 0;
     }
 
     initLegs() {
@@ -206,6 +216,26 @@ export class Insect {
                 new RhinoBeetleLeg(1, 2, this.scale),
                 new RhinoBeetleLeg(-1, 2, this.scale)
             ];
+            this.legs = [];
+        } else if (this.form === 'CENTIPEDE') {
+            // Init Segments
+            this.centipedeSegments = [];
+            const SEGMENT_COUNT = 40;
+            // Start behind head
+            for (let i = 0; i < SEGMENT_COUNT; i++) {
+                this.centipedeSegments.push({
+                    x: this.pos.x - (i * (18 * 0.6 * this.scale)),
+                    y: this.pos.y,
+                    angle: this.angle
+                });
+            }
+
+            // Legs: 1 pair per segment (except head/tail maybe? Reference: 1 to count-1)
+            this.centipedeLegs = [];
+            for (let i = 0; i < SEGMENT_COUNT; i++) {
+                this.centipedeLegs.push(new CentipedeLeg(i, -1, this.scale));
+                this.centipedeLegs.push(new CentipedeLeg(i, 1, this.scale));
+            }
             this.legs = [];
         }
         else if (this.form === 'SPIDER') {
@@ -591,6 +621,10 @@ export class Insect {
             this.form = 'RHINO_BEETLE';
             this.initLegs();
             formName = "独角仙 (RHINO BEETLE)";
+        } else if (this.evolutionStage === 11) {
+            this.form = 'CENTIPEDE';
+            this.initLegs();
+            formName = "巨型蜈蚣 (CENTIPEDE)";
         }
 
         if (this.onEvolve) this.onEvolve(formName, this.evolutionStage);
@@ -633,6 +667,7 @@ export class Insect {
             if (this.stickLegs) this.stickLegs.forEach(leg => leg.updateScale(this.scale));
             if (this.tarantulaLegs) this.tarantulaLegs.forEach(leg => leg.updateScale(this.scale));
             if (this.rhinoLegs) this.rhinoLegs.forEach(leg => leg.updateScale(this.scale));
+            if (this.centipedeLegs) this.centipedeLegs.forEach(leg => leg.updateScale(this.scale)); // If any
         } else {
             this.scale = effectiveTarget;
         }
@@ -758,6 +793,9 @@ export class Insect {
             return;
         } else if (this.form === 'RHINO_BEETLE') {
             this.drawRhinoBeetle(ctx);
+            return;
+        } else if (this.form === 'CENTIPEDE') {
+            this.drawCentipede(ctx);
             return;
         }
 
@@ -1420,6 +1458,45 @@ export class Insect {
             let speed = this.vel.mag();
             this.rhinoWalkCycle += speed * 0.2;
             this.rhinoLegs.forEach(leg => leg.updateScale(this.scale));
+            return;
+        } else if (this.form === 'CENTIPEDE') {
+            // physics/IK logic from reference
+            let head = this.centipedeSegments[0];
+            if (!head) return;
+
+            // Head follows 'this.pos' (Player control)
+            head.x = this.pos.x;
+            head.y = this.pos.y;
+            head.angle = this.angle;
+
+            const SEGMENT_SIZE = 18 * this.scale;
+            const spacing = SEGMENT_SIZE * 0.65;
+
+            for (let i = 1; i < this.centipedeSegments.length; i++) {
+                const current = this.centipedeSegments[i];
+                const prev = this.centipedeSegments[i - 1];
+
+                const dx = prev.x - current.x;
+                const dy = prev.y - current.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx);
+
+                // Teleport if too far (world wrap or reset?)
+                // Reference checks > 300. Scaled?
+                if (dist > 300 * this.scale) {
+                    current.x = prev.x;
+                    current.y = prev.y;
+                } else {
+                    const targetX = prev.x - Math.cos(angle) * spacing;
+                    const targetY = prev.y - Math.sin(angle) * spacing;
+
+                    current.x += (targetX - current.x) * 0.6;
+                    current.y += (targetY - current.y) * 0.6;
+                    current.angle = angle;
+                }
+            }
+
+            this.centipedeLegPhase += this.vel.mag() * 0.15;
             return;
         }
 
@@ -2366,6 +2443,103 @@ export class Insect {
 
         ctx.restore();
         ctx.restore();
+    }
+
+    drawCentipede(ctx) {
+        const segments = this.centipedeSegments;
+        if (!segments || segments.length === 0) return;
+
+        const SEGMENT_SIZE = 18 * this.scale;
+
+        // 1. Shadows
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        segments.forEach((seg, i) => {
+            const size = i === 0 ? SEGMENT_SIZE * 1.2 : SEGMENT_SIZE * (1 - i / segments.length * 0.6);
+            ctx.beginPath();
+            ctx.arc(seg.x + 5 * this.scale, seg.y + 5 * this.scale, size, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // 2. Legs (Draw from 1 to N-1)
+
+        const LEG_LENGTH = 35 * this.scale;
+
+        for (let i = 1; i < segments.length - 1; i++) {
+            let seg = segments[i];
+            let sizeRatio = (1 - i / segments.length * 0.6);
+
+            let legL = this.centipedeLegs[i * 2];
+            let legR = this.centipedeLegs[i * 2 + 1];
+
+            if (legL) legL.draw(ctx, seg.x, seg.y, seg.angle, this.centipedeLegPhase, sizeRatio);
+            if (legR) legR.draw(ctx, seg.x, seg.y, seg.angle, this.centipedeLegPhase, sizeRatio);
+        }
+
+        // 3. Body
+        segments.forEach((seg, i) => {
+            const isHead = (i === 0);
+            let size = isHead ? SEGMENT_SIZE * 1.3 : SEGMENT_SIZE * (1 - i / segments.length * 0.6);
+
+            ctx.save();
+            ctx.translate(seg.x, seg.y);
+            ctx.rotate(seg.angle);
+
+            const grad = ctx.createRadialGradient(size / 3, -size / 3, size / 4, 0, 0, size);
+
+            if (isHead) {
+                grad.addColorStop(0, '#ff4d4d');
+                grad.addColorStop(0.5, '#800000');
+                grad.addColorStop(1, '#1a0505');
+            } else {
+                grad.addColorStop(0, '#d16a2e');
+                grad.addColorStop(0.5, '#692a0a');
+                grad.addColorStop(1, '#1a0d05');
+            }
+
+            ctx.fillStyle = grad;
+
+            ctx.beginPath();
+            if (isHead) {
+                ctx.ellipse(0, 0, size * 1.2, size, 0, 0, Math.PI * 2);
+            } else {
+                ctx.ellipse(0, 0, size, size * 0.9, 0, 0, Math.PI * 2);
+            }
+            ctx.fill();
+
+            if (isHead) {
+                // Antennae
+                let wave = Math.sin(this.centipedeLegPhase * 0.5) * 0.2;
+                ctx.strokeStyle = '#a33';
+                ctx.lineWidth = 2 * this.scale;
+
+                // L
+                ctx.beginPath();
+                ctx.moveTo(size * 0.5, -size * 0.4);
+                ctx.quadraticCurveTo(size * 2, -size * 1.5 + (wave * 10 * this.scale), size * 3.5, -size * 0.8);
+                ctx.stroke();
+                // R
+                ctx.beginPath();
+                ctx.moveTo(size * 0.5, size * 0.4);
+                ctx.quadraticCurveTo(size * 2, size * 1.5 - (wave * 10 * this.scale), size * 3.5, size * 0.8);
+                ctx.stroke();
+
+                // Mandibles
+                ctx.fillStyle = '#111';
+                ctx.beginPath();
+                ctx.moveTo(size, -size * 0.3);
+                ctx.lineTo(size + 10 * this.scale, -size * 0.1);
+                ctx.lineTo(size, 0);
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.moveTo(size, size * 0.3);
+                ctx.lineTo(size + 10 * this.scale, size * 0.1);
+                ctx.lineTo(size, 0);
+                ctx.fill();
+            }
+
+            ctx.restore();
+        });
     }
 
 }
