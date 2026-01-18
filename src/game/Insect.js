@@ -18,9 +18,9 @@ export const STAGE_CONFIG = {
     5: { name: 'SPIDER', startScale: 6.5, endScale: 10.0 },
     5: { name: 'SPIDER', startScale: 6.5, endScale: 10.0 },
     6: { name: 'MANTIS', startScale: 12.0, endScale: 18.0 },
-    7: { name: 'CRICKET', startScale: 14.0, endScale: 20.0 },
-    8: { name: 'STICK_INSECT', startScale: 16.0, endScale: 24.0 },
-    9: { name: 'TARANTULA', startScale: 10.0, endScale: 14.0 }
+    7: { name: 'CRICKET', startScale: 20.0, endScale: 26.0 },
+    8: { name: 'STICK_INSECT', startScale: 28.0, endScale: 36.0 },
+    9: { name: 'TARANTULA', startScale: 40.0, endScale: 55.0 }
 };
 
 /**
