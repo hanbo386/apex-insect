@@ -3042,7 +3042,9 @@ export class Insect {
             const ang = prev ? Math.atan2(seg.y - prev.y, seg.x - prev.x) : this.angle;
 
             const moveFactor = (this.vel.mag() / this.maxSpeed) + 0.1;
-            const vSway = Math.sin(this.titanTime * 2 + i * 0.3) * 20 * this.scale * moveFactor;
+            // Ramp up sway over first 4 segments to keep connection to body stable
+            const swayDamp = Math.min(1.0, i / 4);
+            const vSway = Math.sin(this.titanTime * 2 + i * 0.3) * 8 * this.scale * moveFactor * swayDamp;
 
             const sx = seg.x + Math.cos(ang + Math.PI / 2) * vSway;
             const sy = seg.y + Math.sin(ang + Math.PI / 2) * vSway;
