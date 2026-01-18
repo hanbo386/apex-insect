@@ -6,6 +6,7 @@ import { MantisLeg } from './MantisParts.js';
 import { CricketLeg } from './CricketParts.js';
 import { StickInsectLeg } from './StickInsectParts.js';
 import { TarantulaLeg } from './TarantulaParts.js';
+import { RhinoBeetleLeg } from './RhinoBeetleParts.js';
 
 // --- Standardized Size Configuration ---
 // Defines the scale range for each evolution stage.
@@ -20,7 +21,8 @@ export const STAGE_CONFIG = {
     6: { name: 'MANTIS', startScale: 12.0, endScale: 18.0 },
     7: { name: 'CRICKET', startScale: 20.0, endScale: 26.0 },
     8: { name: 'STICK_INSECT', startScale: 28.0, endScale: 36.0 },
-    9: { name: 'TARANTULA', startScale: 40.0, endScale: 55.0 }
+    9: { name: 'TARANTULA', startScale: 40.0, endScale: 55.0 },
+    10: { name: 'RHINO_BEETLE', startScale: 60.0, endScale: 80.0 }
 };
 
 /**
@@ -117,6 +119,10 @@ export class Insect {
         this.tarantulaLegs = [];
         this.stepGroup = 0; // Shared step group logic
         this.moveDist = 0;
+
+        // --- Rhino Beetle Properties ---
+        this.rhinoLegs = [];
+        this.rhinoWalkCycle = 0;
     }
 
     initLegs() {
@@ -190,6 +196,16 @@ export class Insect {
                 this.tarantulaLegs.push(new TarantulaLeg(-1, i, this.scale));
                 this.tarantulaLegs.push(new TarantulaLeg(1, i, this.scale));
             }
+            this.legs = [];
+        } else if (this.form === 'RHINO_BEETLE') {
+            this.rhinoLegs = [
+                new RhinoBeetleLeg(1, 0, this.scale),
+                new RhinoBeetleLeg(-1, 0, this.scale),
+                new RhinoBeetleLeg(1, 1, this.scale),
+                new RhinoBeetleLeg(-1, 1, this.scale),
+                new RhinoBeetleLeg(1, 2, this.scale),
+                new RhinoBeetleLeg(-1, 2, this.scale)
+            ];
             this.legs = [];
         }
         else if (this.form === 'SPIDER') {
@@ -571,6 +587,10 @@ export class Insect {
             this.maxSpeed *= 1.1; // Faster?
             this.initLegs();
             formName = "狼蛛 (TARANTULA)";
+        } else if (this.evolutionStage === 10) {
+            this.form = 'RHINO_BEETLE';
+            this.initLegs();
+            formName = "独角仙 (RHINO BEETLE)";
         }
 
         if (this.onEvolve) this.onEvolve(formName, this.evolutionStage);
@@ -612,6 +632,7 @@ export class Insect {
             if (this.cricketLegs) this.cricketLegs.forEach(leg => leg.updateScale(this.scale));
             if (this.stickLegs) this.stickLegs.forEach(leg => leg.updateScale(this.scale));
             if (this.tarantulaLegs) this.tarantulaLegs.forEach(leg => leg.updateScale(this.scale));
+            if (this.rhinoLegs) this.rhinoLegs.forEach(leg => leg.updateScale(this.scale));
         } else {
             this.scale = effectiveTarget;
         }
@@ -734,6 +755,9 @@ export class Insect {
             return;
         } else if (this.form === 'TARANTULA') {
             this.drawTarantula(ctx);
+            return;
+        } else if (this.form === 'RHINO_BEETLE') {
+            this.drawRhinoBeetle(ctx);
             return;
         }
 
@@ -1390,6 +1414,12 @@ export class Insect {
                 leg.updateScale(this.scale);
                 leg.update(this.pos, this.angle, this.vel, this.stepGroup);
             });
+            return;
+        } else if (this.form === 'RHINO_BEETLE') {
+            // Simple Walk Cycle update
+            let speed = this.vel.mag();
+            this.rhinoWalkCycle += speed * 0.2;
+            this.rhinoLegs.forEach(leg => leg.updateScale(this.scale));
             return;
         }
 
@@ -2223,4 +2253,119 @@ export class Insect {
         }
         ctx.restore();
     }
+
+    drawRhinoBeetle(ctx) {
+        let s = this.scale;
+
+        ctx.save();
+        ctx.translate(this.pos.x, this.pos.y);
+        ctx.rotate(this.angle);
+
+        // 1. Legs
+        this.rhinoLegs.forEach(leg => leg.draw(ctx, this));
+
+        // 2. Abdomen/Elytra
+        let abdomenGrad = ctx.createRadialGradient(-10 * s, 0, 2 * s, -15 * s, 0, 45 * s);
+        abdomenGrad.addColorStop(0, '#5D4037');
+        abdomenGrad.addColorStop(0.4, '#3E1C1C');
+        abdomenGrad.addColorStop(1, '#0f0505');
+
+        ctx.fillStyle = abdomenGrad;
+        ctx.beginPath();
+        ctx.ellipse(-12 * s, 0, 34 * s, 21 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Elytra Suture
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        ctx.lineWidth = 1.5 * s;
+        ctx.beginPath();
+        ctx.moveTo(10 * s, 0);
+        ctx.lineTo(-44 * s, 0);
+        ctx.stroke();
+
+        // 3. Pronotum
+        let thoraxGrad = ctx.createRadialGradient(15 * s, 0, 2 * s, 15 * s, 0, 22 * s);
+        thoraxGrad.addColorStop(0, '#5D4037');
+        thoraxGrad.addColorStop(0.5, '#2b1212');
+        thoraxGrad.addColorStop(1, '#0a0202');
+
+        ctx.fillStyle = thoraxGrad;
+        ctx.beginPath();
+        ctx.moveTo(8 * s, -18 * s);
+        ctx.bezierCurveTo(28 * s, -20 * s, 28 * s, 20 * s, 8 * s, 18 * s);
+        ctx.bezierCurveTo(4 * s, 10 * s, 4 * s, -10 * s, 8 * s, -18 * s);
+        ctx.fill();
+
+        // Thorax Horn
+        ctx.fillStyle = '#1a0505';
+        ctx.beginPath();
+        ctx.moveTo(18 * s, -6 * s);
+        ctx.quadraticCurveTo(35 * s, 0, 42 * s, -6 * s);
+        ctx.lineTo(40 * s, 0);
+        ctx.lineTo(42 * s, 6 * s);
+        ctx.quadraticCurveTo(35 * s, 0, 18 * s, 6 * s);
+        ctx.fill();
+
+        // Highlight
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.lineWidth = 2 * s;
+        ctx.beginPath();
+        ctx.moveTo(20 * s, 0);
+        ctx.lineTo(38 * s, 0);
+        ctx.stroke();
+
+        // 4. Head (With Sway)
+        ctx.save();
+
+        const swayAmount = 0.05;
+        const speedFactor = Math.min(1.0, this.vel.mag() / this.maxSpeed);
+        const headSway = Math.sin(this.rhinoWalkCycle * 0.6) * swayAmount * speedFactor;
+
+        ctx.translate(18 * s, 0);
+        ctx.rotate(headSway);
+        ctx.translate(-18 * s, 0);
+
+        // Head Sphere
+        ctx.fillStyle = '#1a0505';
+        ctx.beginPath();
+        ctx.arc(24 * s, 0, 11 * s, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Head Horn
+        ctx.fillStyle = '#2b1212';
+        ctx.beginPath();
+        ctx.moveTo(28 * s, -6 * s);
+        ctx.quadraticCurveTo(55 * s, 0, 75 * s, -12 * s);
+        ctx.lineTo(62 * s, -4 * s);
+        ctx.lineTo(58 * s, 0);
+        ctx.lineTo(62 * s, 4 * s);
+        ctx.lineTo(75 * s, 12 * s);
+        ctx.quadraticCurveTo(55 * s, 0, 28 * s, 6 * s);
+        ctx.fill();
+
+        // Horn Highlight
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.beginPath();
+        ctx.moveTo(30 * s, -2 * s);
+        ctx.quadraticCurveTo(50 * s, 0, 65 * s, -2 * s);
+        ctx.stroke();
+
+        // Eyes
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(24 * s, -11 * s, 2.5 * s, 0, Math.PI * 2);
+        ctx.arc(24 * s, 11 * s, 2.5 * s, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Eye Highlight
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(25 * s, -12 * s, 1 * s, 0, Math.PI * 2);
+        ctx.arc(25 * s, 10 * s, 1 * s, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+        ctx.restore();
+    }
+
 }
