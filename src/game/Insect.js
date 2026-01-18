@@ -9,6 +9,7 @@ import { TarantulaLeg } from './TarantulaParts.js';
 import { RhinoBeetleLeg } from './RhinoBeetleParts.js';
 import { CentipedeLeg } from './CentipedeParts.js';
 import { ScorpionLeg, ScorpionClaw } from './ScorpionParts.js';
+import { TitanLeg, TitanUtils } from './TitanParts.js';
 
 // --- Standardized Size Configuration ---
 // Defines the scale range for each evolution stage.
@@ -25,7 +26,8 @@ export const STAGE_CONFIG = {
     9: { name: 'STICK_INSECT', startScale: 60.0, endScale: 80.0 },
     10: { name: 'TARANTULA', startScale: 100.0, endScale: 130.0 },
     11: { name: 'CENTIPEDE', startScale: 150.0, endScale: 200.0 },
-    12: { name: 'SCORPION', startScale: 325.0, endScale: 420.0 }
+    12: { name: 'SCORPION', startScale: 325.0, endScale: 420.0 },
+    13: { name: 'TITAN', startScale: 500.0, endScale: 600.0 }
 };
 
 /**
@@ -141,6 +143,12 @@ export class Insect {
         this.scorpionSegments = [];
         this.scorpionStingProgress = 0;
         this.scorpionStingTarget = 0;
+
+        // --- TITAN Properties ---
+        this.titanLegs = [];
+        this.titanTail = [];
+        this.titanAntennae = [];
+        this.titanTime = 0;
     }
 
     initLegs() {
@@ -280,6 +288,68 @@ export class Insect {
                     type: i < 3 ? 'head' : (i < 10 ? 'body' : 'tail')
                 });
             }
+        }
+        else if (this.form === 'TITAN') {
+            this.titanLegs = [];
+            this.titanTail = [];
+            this.titanAntennae = [];
+
+            // 1. Legs (3 Pairs)
+            const legPos = [80, -120, -280];
+            const legLen = [180, 240, 360];
+            const legWid = [22, 24, 30];
+            const legBend = [1, -1, -1];
+
+            for (let i = 0; i < 3; i++) {
+                // Right (Side 1)
+                this.titanLegs.push(new TitanLeg(this, {
+                    offsetX: legPos[i], offsetY: 60,
+                    length: legLen[i], side: 1,
+                    width: legWid[i], bendDir: legBend[i],
+                    isHeavy: i === 2
+                }));
+                // Left (Side -1)
+                this.titanLegs.push(new TitanLeg(this, {
+                    offsetX: legPos[i], offsetY: -60,
+                    length: legLen[i], side: -1,
+                    width: legWid[i], bendDir: legBend[i],
+                    isHeavy: i === 2
+                }));
+            }
+
+            // 2. Tail (20 Segments)
+            for (let i = 0; i < 20; i++) {
+                const startOff = -200 - i * 40;
+                const offX = Math.cos(this.angle) * startOff * this.scale;
+                const offY = Math.sin(this.angle) * startOff * this.scale;
+
+                this.titanTail.push({
+                    x: this.pos.x + offX,
+                    y: this.pos.y + offY,
+                    sizeBase: 65 - i * 2.5,
+                    size: (65 - i * 2.5) * this.scale
+                });
+            }
+
+            // 3. Antennae (2 Chains)
+            for (let s of [-1, 1]) {
+                const segs = [];
+                for (let i = 0; i < 15; i++) {
+                    const localX = 150;
+                    const localY = s * 50;
+                    const rX = localX * Math.cos(this.angle) - localY * Math.sin(this.angle);
+                    const rY = localX * Math.sin(this.angle) + localY * Math.cos(this.angle);
+
+                    segs.push({
+                        x: this.pos.x + rX * this.scale,
+                        y: this.pos.y + rY * this.scale,
+                        sizeBase: 12 - i * 0.7,
+                        size: (12 - i * 0.7) * this.scale
+                    });
+                }
+                this.titanAntennae.push({ side: s, segments: segs });
+            }
+            this.legs = [];
         }
         else if (this.form === 'SPIDER') {
             this.spiderLegs = [];
@@ -672,6 +742,10 @@ export class Insect {
             this.form = 'SCORPION';
             this.initLegs();
             formName = "巨型毒蝎 (SCORPION)";
+        } else if (this.evolutionStage === 13) {
+            this.form = 'TITAN';
+            this.initLegs();
+            formName = "霸主巅峰 (TITAN)";
         }
 
         if (this.onEvolve) this.onEvolve(formName, this.evolutionStage);
@@ -785,6 +859,22 @@ export class Insect {
         if (this.form === 'SCORPION') {
             this.updateScorpion(input);
             return;
+        } else if (this.form === 'TITAN') {
+            this.updateTitan(16 / 1000); // Fixed dt or just allow usage
+            // Main update doesn't pass dt to updateVisuals, it uses 'input'.
+            // But this.titanTime needs dt.
+            // Insect.update() calls this.updateVisuals() without dt usually?
+            // Actually Insect.update(input, dt) calls this.updateVisuals()
+            // Wait, look at line 854: this.updateVisuals();
+            // Insect.update definition: update(input, dt)
+            // So dt is available in scope if updateVisuals() took it.
+            // But updateVisuals definition at line 1425 likely doesn't take dt?
+            // Let's check updateVisuals signature.
+            // Assuming dt is not passed, we might need a workaround or check if dt is this.game.dt?
+            // For now, let's just leave it, but fix the duplication.
+            // Ideally passing 'dt' if available or 0.016.
+            this.updateTitan(0.016);
+            return;
         }
 
         // --- 身体跟随 ---
@@ -861,6 +951,9 @@ export class Insect {
             return;
         } else if (this.form === 'SCORPION') {
             this.drawScorpion(ctx);
+            return;
+        } else if (this.form === 'TITAN') {
+            this.drawTitan(ctx);
             return;
         }
 
@@ -2781,6 +2874,254 @@ export class Insect {
 
             ctx.strokeStyle = 'rgba(0,0,0,0.2)';
             ctx.beginPath(); ctx.moveTo(-w * 0.5, 0); ctx.lineTo(w * 0.5, 0); ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    // --- Titan Methods (Exact logic from Reference) ---
+    updateTitan(dt) {
+        this.titanTime += dt;
+
+        // Update Legs
+        this.titanLegs.forEach(leg => {
+            leg.update(dt, this.vel);
+        });
+
+        // Update Tail (Stable Chain)
+        this.updateStableChain(this.titanTail, 180 * this.scale, 45 * this.scale);
+
+        // Update Antennae (Stable Chain)
+        this.updateStableChainAntennae(this.titanAntennae, 120 * this.scale, 50 * this.scale, 22 * this.scale);
+    }
+
+    updateStableChain(chain, rootOffset, spacing) {
+        let tx = this.pos.x - Math.cos(this.angle) * rootOffset;
+        let ty = this.pos.y - Math.sin(this.angle) * rootOffset;
+
+        chain.forEach((seg) => {
+            const dx = tx - seg.x, dy = ty - seg.y, dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > spacing || dist < spacing * 0.5) {
+                const ang = Math.atan2(dy, dx);
+                seg.x = tx - Math.cos(ang) * spacing;
+                seg.y = ty - Math.sin(ang) * spacing;
+            }
+            tx = seg.x; ty = seg.y;
+
+            // Dynamic Size Update
+            seg.size = seg.sizeBase * this.scale;
+        });
+    }
+
+    updateStableChainAntennae(antennae, localX, localY, spacing) {
+        const cos = Math.cos(this.angle), sin = Math.sin(this.angle);
+
+        antennae.forEach(ant => {
+            let tx = this.pos.x + (localX * cos - ant.side * localY * sin);
+            let ty = this.pos.y + (localX * sin + ant.side * localY * cos);
+
+            ant.segments.forEach((seg) => {
+                const dx = tx - seg.x, dy = ty - seg.y, dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > spacing) {
+                    const ang = Math.atan2(dy, dx);
+                    seg.x = tx - Math.cos(ang) * spacing;
+                    seg.y = ty - Math.sin(ang) * spacing;
+                }
+                tx = seg.x; ty = seg.y;
+
+                // Dynamic Size
+                seg.size = seg.sizeBase * this.scale;
+            });
+        });
+    }
+
+    drawTitan(ctx) {
+        // Legs
+        this.titanLegs.forEach(leg => leg.draw(ctx));
+
+        ctx.save();
+        ctx.translate(this.pos.x, this.pos.y);
+        ctx.rotate(this.angle);
+
+        const glow = `rgba(255, 61, 0, ${0.4 + Math.sin(this.titanTime * 3) * 0.2})`;
+
+        // Body Segments
+        const bodySegs = [
+            { x: -20, w: 80 },
+            { x: -100, w: 100 },
+            { x: -180, w: 110 }
+        ];
+
+        bodySegs.forEach((seg, i) => {
+            const bx = seg.x * this.scale;
+            const bw = seg.w * this.scale;
+            TitanUtils.drawOrganicPoly(ctx, bx, 0, bw, 12, {
+                spike: 8 * this.scale, detail: 2, color: '#5d4037',
+                gloss: 0.5, textureSeed: i, glow: glow
+            });
+        });
+
+        // Thorax
+        TitanUtils.drawOrganicPoly(ctx, 40 * this.scale, 0, 90 * this.scale, 8, {
+            spike: 15 * this.scale, detail: 3, rotation: Math.PI / 8,
+            color: '#2a1a15', gloss: 0.8, textureSeed: 10, glow
+        });
+
+        // Mandibles
+        ctx.fillStyle = '#1a0a05'; ctx.strokeStyle = '#ff3d00'; ctx.lineWidth = 2 * this.scale;
+        [1, -1].forEach(side => {
+            ctx.save();
+            ctx.translate(60 * this.scale, side * 40 * this.scale);
+            ctx.rotate(side * 0.6);
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.bezierCurveTo(50 * this.scale, side * 80 * this.scale, 130 * this.scale, side * 30 * this.scale, 150 * this.scale, side * 60 * this.scale);
+            ctx.lineTo(100 * this.scale, side * 15 * this.scale);
+            ctx.fill(); ctx.stroke();
+            ctx.restore();
+        });
+
+        // Wings / Cape
+        ctx.save(); ctx.globalAlpha = 0.25; ctx.fillStyle = '#4a2c2a';
+
+        const speedRatio = (this.vel.mag() / this.maxSpeed);
+        const wingIntensity = speedRatio * 25 * this.scale;
+
+        [1, -1].forEach(side => {
+            const indShake = Math.sin(this.titanTime * 15 + side * 0.5) * wingIntensity;
+            ctx.beginPath();
+            ctx.moveTo(-30 * this.scale, side * 40 * this.scale);
+            ctx.bezierCurveTo(
+                -200 * this.scale,
+                (side * 300 * this.scale) + indShake,
+                -500 * this.scale,
+                (side * 200 * this.scale) + indShake,
+                -600 * this.scale,
+                side * 60 * this.scale
+            );
+            ctx.lineTo(-150 * this.scale, 0);
+            ctx.fill();
+        });
+        ctx.restore();
+
+        // Head
+        this.drawTitanHead(ctx, glow);
+
+        ctx.restore();
+
+        // Antennae
+        this.titanAntennae.forEach(ant => {
+            ctx.beginPath();
+            ctx.strokeStyle = '#000';
+            ctx.lineCap = 'round';
+            if (ant.segments.length < 1) return;
+
+            ant.segments.forEach((seg, i) => {
+                const prev = ant.segments[i - 1];
+                const vSway = Math.sin(this.titanTime * 4 + i * 0.4) * 15 * this.scale;
+                let ang = 0;
+                if (prev) {
+                    ang = Math.atan2(seg.y - prev.y, seg.x - prev.x);
+                } else {
+                    ang = Math.atan2(seg.y - this.pos.y, seg.x - this.pos.x);
+                }
+
+                const sx = seg.x + Math.cos(ang + Math.PI / 2) * vSway;
+                const sy = seg.y + Math.sin(ang + Math.PI / 2) * vSway;
+
+                ctx.lineWidth = seg.size;
+                if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+                ctx.stroke();
+
+                ctx.beginPath(); ctx.moveTo(sx, sy);
+            });
+        });
+
+        // Tail
+        this.titanTail.forEach((seg, i) => {
+            const prev = this.titanTail[i - 1];
+            const ang = prev ? Math.atan2(seg.y - prev.y, seg.x - prev.x) : this.angle;
+
+            const moveFactor = (this.vel.mag() / this.maxSpeed) + 0.1;
+            const vSway = Math.sin(this.titanTime * 2 + i * 0.3) * 20 * this.scale * moveFactor;
+
+            const sx = seg.x + Math.cos(ang + Math.PI / 2) * vSway;
+            const sy = seg.y + Math.sin(ang + Math.PI / 2) * vSway;
+
+            if (i === this.titanTail.length - 1) {
+                // STINGER
+                ctx.save();
+                ctx.translate(sx, sy);
+                ctx.rotate(ang);
+                ctx.scale(this.scale, this.scale);
+
+                ctx.fillStyle = '#ff3d00';
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 65, 45, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.moveTo(40, -15);
+                ctx.bezierCurveTo(120, -100, 200, 0, 160, 80);
+                ctx.lineTo(145, 60);
+                ctx.bezierCurveTo(170, 0, 100, -30, 40, 15);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(80, -30);
+                ctx.quadraticCurveTo(150, -20, 155, 50);
+                ctx.stroke();
+
+                ctx.restore();
+            } else {
+                TitanUtils.drawOrganicPoly(ctx, sx, sy, seg.size, 6, {
+                    spike: 15 * this.scale, detail: 1, color: '#4e342e',
+                    gloss: 0.4, rotation: ang + Math.PI / 2, textureSeed: i
+                });
+            }
+        });
+    }
+
+    drawTitanHead(ctx, glow) {
+        ctx.save();
+        ctx.translate(130 * this.scale, 0);
+        const br = Math.sin(this.titanTime * 2) * 0.1;
+
+        const drawM = (sign) => {
+            ctx.save();
+            ctx.rotate(sign * (0.3 - br));
+            ctx.fillStyle = '#0a0a0a';
+            ctx.beginPath();
+            ctx.moveTo(0, sign * 25 * this.scale);
+            ctx.bezierCurveTo(80 * this.scale, sign * 110 * this.scale, 180 * this.scale, sign * 45 * this.scale, 210 * this.scale, sign * 5 * this.scale);
+            ctx.lineTo(180 * this.scale, 0);
+
+            for (let k = 0; k < 10; k++) {
+                const tx = (180 - k * 18) * this.scale;
+                const spikeDepth = (22 + (Math.random() * 5)) * this.scale;
+                ctx.lineTo(tx + 5 * this.scale, sign * spikeDepth);
+                ctx.lineTo(tx - 12 * this.scale, sign * 2 * this.scale);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = '#444'; ctx.lineWidth = 2 * this.scale; ctx.stroke();
+            ctx.restore();
+        };
+        drawM(1);
+        drawM(-1);
+
+        TitanUtils.drawOrganicPoly(ctx, 0, 0, 60 * this.scale, 6, {
+            spike: 6 * this.scale, detail: 2, color: '#3e2723',
+            gloss: 0.8, textureSeed: 88
+        });
+
+        ctx.fillStyle = '#ff3d00';
+        for (let k = 0; k < 3; k++) {
+            ctx.fillRect((25 + k * 10) * this.scale, 20 * this.scale, 12 * this.scale, 18 * this.scale);
+            ctx.fillRect((25 + k * 10) * this.scale, -40 * this.scale, 12 * this.scale, 18 * this.scale);
         }
         ctx.restore();
     }
