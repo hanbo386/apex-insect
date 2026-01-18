@@ -37,7 +37,7 @@ function updateUI() {
     // 4: 蟑螂 (Cockroach)
     // 5: 蜘蛛 (Spider)
     // 6: 螳螂 (Mantis)
-    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)", "蜘蛛 (Spider)", "螳螂 (Mantis)", "蟋蟀 (Cricket)", "竹节虫 (Stick Insect)", "独角仙 (Rhino Beetle)", "狼蛛 (Tarantula)", "巨型蜈蚣 (Centipede)", "巨型毒蝎 (Scorpion)"];
+    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)", "蜘蛛 (Spider)", "螳螂 (Mantis)", "蟋蟀 (Cricket)", "独角仙 (Rhino Beetle)", "竹节虫 (Stick Insect)", "狼蛛 (Tarantula)", "巨型蜈蚣 (Centipede)", "巨型毒蝎 (Scorpion)"];
     let displayForm = formNames[player.evolutionStage] || `MARK-${player.evolutionStage}`;
 
     // Relative Level Calculation
@@ -127,7 +127,7 @@ player.onEvolve = (formName, stage) => {
             // We want the player to visually reset to 1.0.
             // So we set the divisor to the canonical start scale of the current stage.
             let resetBaseScale = 6.5; // Default Stage 5 (Spider)
-            if (stage === 9) resetBaseScale = 50.0; // Stage 9 (Rhino Beetle)
+            if (stage === 9) resetBaseScale = 60.0; // Stage 9 (Stick Insect)
 
             // Update Divisor (Absolute assignment)
             player.worldScaleDivisor = resetBaseScale;
