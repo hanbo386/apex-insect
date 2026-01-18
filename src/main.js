@@ -107,11 +107,12 @@ player.onLevelUp = (lvl) => {
 };
 player.onEvolve = (formName, stage) => {
     // Check for Stage 5 (Spider) -> World Reset
-    if (stage === 5 && !player.hasResetWorld) {
+    // World Reset Logic (Prestige)
+    // Occurs at Stage 5 (Spider) and Stage 9 (Rhino Beetle)
+    if ((stage === 5 || stage === 9) && !player.hasResetWorld) {
         player.hasResetWorld = true;
+
         // 1. Popup Prompt
-        // Use setTimeout to allow the render loop to maybe show the spider for a split second? 
-        // Or just block immediately. User said "Before reset".
         // Alert blocks thread, so let's do it.
         setTimeout(() => {
             alert("完成跃迁，将进入下一个世界");
@@ -122,54 +123,22 @@ player.onEvolve = (formName, stage) => {
             texts.length = 0;
 
             // 3. Reset Player Logic
-            // Start as Level 1 Spider (Level is already set to 1 by evolve())
-            // Reset Scale to 1
-            // Reset Scale to 1 (visual start only, handled by modifier)
-            // player.scale = 1.0;
-            // Optionally increase world tier for difficulty scaling if desired, 
-            // but user request was specific about resetting scale/zoom.
             // Calculate Scale Divisor. 
-            // Previous Logic: player.worldTier was just counting 1,2,3...
-            // New Requirement: We need specific size reduction.
-            // Canonical Start Scale for Stage 5 is 6.5 (from STAGE_CONFIG).
-            // New Scale is 1.0.
-            // So we are dividing everything by 6.5.
-            // Let's store this cumulative divisor.
-            if (!player.worldScaleDivisor) player.worldScaleDivisor = 1.0;
+            // We want the player to visually reset to 1.0.
+            // So we set the divisor to the canonical start scale of the current stage.
+            let resetBaseScale = 6.5; // Default Stage 5 (Spider)
+            if (stage === 9) resetBaseScale = 50.0; // Stage 9 (Rhino Beetle)
 
-            // Hardcoded reference to Stage 5 Start Scale from Insect.js STAGE_CONFIG
-            // We can't import STAGE_CONFIG here easily because it's a value not a type, 
-            // but we can access it if we exported it or just hardcode 6.5 for now as the 'Spider Base'.
-            const SPIDER_BASE_SCALE = 6.5;
-
-            // Cumulative: If we reset AGAIN later (e.g. at Mantis?), we'd multiply.
-            player.worldScaleDivisor *= SPIDER_BASE_SCALE;
-
-            // FIX: DO NOT reset baseScale/targetScale to 1.0 manually!
-            // Insect.js relies on them being the Canonical Config values (6.5).
-            // We ONLY control the final scale via worldScaleModifier.
-            // player.baseScale = 1.0; // REMOVED
-            // player.targetScale = 1.0; // REMOVED
+            // Update Divisor (Absolute assignment)
+            player.worldScaleDivisor = resetBaseScale;
 
             if (!player.worldTier) player.worldTier = 1.0;
             player.worldTier += 1.0; // Increment Tier
 
-            // FIX: Set worldScaleModifier so Insect.js update() logic handles the shrinking persistently.
-            // Insect.js uses: effectiveTarget = targetScale * worldScaleModifier
-            // We want effectiveTarget to start at 1.0.
-            // targetScale (canonical) is SPIDER_BASE_SCALE (6.5).
-            // So worldScaleModifier = 1.0 / SPIDER_BASE_SCALE.
-            // Or more generally: 1.0 / player.worldScaleDivisor
             player.worldScaleModifier = 1.0 / player.worldScaleDivisor;
 
             // Update internal scale immediately to prevent 1-frame jump
             player.scale = 1.0;
-            // We do NOT need to manually divide baseScale/targetScale if we rely on the modifier!
-            // But let's leave baseScale alone (canonical) or reset it? 
-            // Actually, Insect.js constructor sets baseScale from Config.
-            // levelUp() sets baseScale from Config.
-            // So manually dividing them here is futile if they get overwritten.
-            // The correct way is ensuring modifier is set.
 
             // Re-init legs at new scale 1.0
             player.initLegs();
@@ -187,11 +156,9 @@ player.onEvolve = (formName, stage) => {
         return;
     }
 
-    // Reset the flag if we are NOT 5 (e.g. if we somehow downgraded or upgraded past it, though 6 is Mantis)
-    // Actually, we only want to trigger this ONCE per run. 
-    // But if we reset, we stay Stage 5. 
-    // So we need a flag "hasResetThisStage".
-    if (stage !== 5) {
+    // Reset the flag if we are NOT 5 or 9
+    // This allows it to trigger again for the next threshold
+    if (stage !== 5 && stage !== 9) {
         player.hasResetWorld = false;
     }
 
