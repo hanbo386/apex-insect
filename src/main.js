@@ -373,11 +373,13 @@ function gameLoop() {
         if (c.isRival) {
             // Rival AI Logic
             c.angle += (Math.random() - 0.5) * 0.2;
-            c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(1.5);
+            // Scale speed with size so they don't look like they are crawling
+            let npcSpeed = 1.5 * (c.scale || 1.0);
+            c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(npcSpeed);
             c.pos = c.pos.add(c.vel);
 
             // Sync speed for animation
-            c.speed = 1.5;
+            c.speed = npcSpeed;
             c.updateVisuals();
 
 
