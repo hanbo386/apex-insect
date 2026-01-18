@@ -27,7 +27,39 @@ resize();
 const uiContainer = document.getElementById('status-container');
 const statusText = document.createElement('span'); // Use span for inline
 statusText.id = 'status-display';
+statusText.id = 'status-display';
 uiContainer.appendChild(statusText);
+
+// Titan Quest Modal
+const modal = document.createElement('div');
+modal.id = 'titan-modal';
+modal.style.cssText = `
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.85); display: none; flex-direction: column;
+    justify-content: center; align-items: center; z-index: 1000; color: #ff3d00;
+    font-family: 'Courier New', monospace; text-align: center; border: 2px solid #ff3d00;
+`;
+modal.innerHTML = `
+    <h1 style="font-size: 40px; margin-bottom: 20px; text-shadow: 0 0 10px red;">⚠️ EVOLUTION WARNING ⚠️</h1>
+    <h2 style="color: #fff; margin-bottom: 30px;">Titan Form Detected</h2>
+    <p style="font-size: 18px; max-width: 600px; line-height: 1.6; color: #ccc; margin-bottom: 40px;">
+        恭喜你进化为巨型毒蝎！距离虫群至尊 (Swarm Sovereign) 仅一步之遥。<br><br>
+        <span style="color: #d4c490;">RITUAL REQUIRED:</span><br>
+        Devour <strong style="color: #ff3d00">50 Scorpions</strong><br>
+        Devour <strong style="color: #ff3d00">30 Centipedes</strong><br>
+        Devour <strong style="color: #ff3d00">20 Tarantulas</strong>
+    </p>
+    <button id="start-quest-btn" style="
+        padding: 15px 40px; font-size: 24px; background: #ff3d00; color: #000; 
+        border: none; cursor: pointer; font-weight: bold; box-shadow: 0 0 20px red;
+    ">INITIATE RITUAL</button>
+`;
+document.body.appendChild(modal);
+
+document.getElementById('start-quest-btn').addEventListener('click', () => {
+    modal.style.display = 'none';
+    if (player.titanQuest) player.titanQuest.active = true;
+});
 
 function updateUI() {
     // 0: 原始种 (Primitive)
@@ -58,6 +90,15 @@ function updateUI() {
         let pct = (player.stamina / player.maxStamina) * 100;
         staminaFill.style.width = `${pct}%`;
         staminaFill.style.background = pct < 20 ? '#ff0000' : '#00ff00';
+    }
+
+    // Titan Quest UI
+    if (player.titanQuest && player.titanQuest.active && !player.titanQuest.complete) {
+        let questHTML = `<br><span style="color: #ff3d00; font-weight:bold;">TITAN QUEST:</span>
+        <span style="color:${player.titanQuest.scorpions >= player.titanQuest.reqScorpions ? '#0f0' : '#aaa'}">Scorpions: ${player.titanQuest.scorpions}/${player.titanQuest.reqScorpions}</span> | 
+        <span style="color:${player.titanQuest.centipedes >= player.titanQuest.reqCentipedes ? '#0f0' : '#aaa'}">Centipedes: ${player.titanQuest.centipedes}/${player.titanQuest.reqCentipedes}</span> | 
+        <span style="color:${player.titanQuest.tarantulas >= player.titanQuest.reqTarantulas ? '#0f0' : '#aaa'}">Tarantulas: ${player.titanQuest.tarantulas}/${player.titanQuest.reqTarantulas}</span>`;
+        statusText.innerHTML += questHTML;
     }
 }
 
@@ -160,6 +201,11 @@ player.onEvolve = (formName, stage) => {
     // This allows it to trigger again for the next threshold
     if (stage !== 5 && stage !== 9) {
         player.hasResetWorld = false;
+    }
+
+    // Check for Titan Quest Initiation
+    if (stage === 12 && !player.titanQuest.active && !player.titanQuest.complete) {
+        document.getElementById('titan-modal').style.display = 'flex';
     }
 
     // Large, prominent gold text
@@ -548,8 +594,49 @@ function gameLoop() {
                     let pushDir = c.pos.sub(player.pos).normalize();
                     c.pos = c.pos.add(pushDir.mult(5));
                     continue;
-                } else if (c.evolutionStage < player.evolutionStage) {
-                    // Enemy Stage is Lower: EAT.
+                } else if (c.evolutionStage < player.evolutionStage || (player.titanQuest && player.titanQuest.active && c.evolutionStage === 12 && player.evolutionStage === 12)) {
+                    // Enemy Stage is Lower (OR it's a Scorpion vs Scorpion Quest Kill)
+                    // Normally equal stage can't eat, but for the Titan ritual, the Scorpion must cannibalize other Scorpions.
+                    // This creates a loophole where Player Scorpion can eat NPC Scorpion if Quest is active.
+
+                    if (player.titanQuest && player.titanQuest.active && c.evolutionStage === 12 && player.evolutionStage === 12) {
+                        // Special check: Is it actually safe to eat? Or should we check Level?
+                        // Let's allow it regardless of level for the "Ritual" feel, or keep level logic?
+                        // If we want it strictly "Lower", this block wouldn't be entered.
+                        // But since we are here due to OR condition:
+                        if (c.level > player.level) {
+                            // Still respect level hierarchy? The prompt implies "Eating 50 Scorpions".
+                            // Usually you can only eat lower level.
+                            // If we fail level check, we bounce.
+                            let pushDir = c.pos.sub(player.pos).normalize();
+                            c.pos = c.pos.add(pushDir.mult(5));
+                            continue;
+                        }
+                    }
+
+                    // THIS IS WHERE PREY DEATH HAPPENS for RIVALS lower than player.
+
+                    // --- TITAN QUEST TRACKING ---
+                    if (player.titanQuest && player.titanQuest.active && !player.titanQuest.complete) {
+                        if (c.evolutionStage === 12) player.titanQuest.scorpions++;
+                        else if (c.evolutionStage === 11) player.titanQuest.centipedes++;
+                        else if (c.evolutionStage === 10) player.titanQuest.tarantulas++; // Assuming StartStage matches?
+                        // Wait, c.evolutionStage indices: 
+                        // 10: Tarantula, 11: Centipede, 12: Scorpion. Correct.
+
+                        // Check Completion
+                        if (player.titanQuest.scorpions >= player.titanQuest.reqScorpions &&
+                            player.titanQuest.centipedes >= player.titanQuest.reqCentipedes &&
+                            player.titanQuest.tarantulas >= player.titanQuest.reqTarantulas) {
+                            player.titanQuest.complete = true;
+                            // TRIGGER EVOLUTION
+                            setTimeout(() => {
+                                // Dramatic Pause or Effect?
+                                createParticles(player.pos.x, player.pos.y, '#ff3d00', 50 * player.scale, 50); // Big explosion
+                                player.evolve(); // This will bump to Stage 13 (Titan)
+                            }, 500);
+                        }
+                    }
                     // (Proceed to eat logic below)
                 } else {
                     // Stages are EQUAL: Compare Level

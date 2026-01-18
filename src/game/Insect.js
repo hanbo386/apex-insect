@@ -149,6 +149,18 @@ export class Insect {
         this.titanTail = [];
         this.titanAntennae = [];
         this.titanTime = 0;
+
+        // --- Titan Quest Properties ---
+        // Requirement: 50 Scorpions, 30 Centipedes, 20 Tarantulas
+        this.titanQuest = {
+            active: false,
+            scorpions: 0,
+            centipedes: 0,
+            tarantulas: 0,
+            reqScorpions: 50,
+            reqCentipedes: 30,
+            reqTarantulas: 20
+        };
     }
 
     initLegs() {
@@ -438,13 +450,28 @@ export class Insect {
     gainXp(amount) {
         this.xp += amount;
 
-        // Check for Level Up or Evolution
+        // Check for Level Up
+        this.checkLevelUp();
+    }
+
+    checkLevelUp() {
         if (this.xp >= this.xpToNext) {
-            if (this.level < 5) {
-                this.levelUp();
-            } else {
-                // Level is 5 (Max for current stage) -> Evolve
+            // Check Max Level
+            if (this.level >= 5) {
+                // At Max Level for current stage
+                // Titan Quest Logic for Scorpion (Stage 12)
+                if (this.evolutionStage === 12) {
+                    // Scorpion CANNOT evolve via XP.
+                    // Must complete the Quest.
+                    // XP accumulates but does nothing or caps?
+                    this.xp = this.xpToNext; // Cap it
+                    return;
+                }
+
+                // Normal Evolution for other stages
                 this.evolve();
+            } else {
+                this.levelUp();
             }
         }
     }
