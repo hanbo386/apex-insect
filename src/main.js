@@ -37,7 +37,7 @@ function updateUI() {
     // 4: 蟑螂 (Cockroach)
     // 5: 蜘蛛 (Spider)
     // 6: 螳螂 (Mantis)
-    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)", "蜘蛛 (Spider)", "螳螂 (Mantis)", "蟋蟀 (Cricket)", "竹节虫 (Stick Insect)", "狼蛛 (Tarantula)", "独角仙 (Rhino Beetle)", "巨型蜈蚣 (Centipede)"];
+    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)", "蜘蛛 (Spider)", "螳螂 (Mantis)", "蟋蟀 (Cricket)", "竹节虫 (Stick Insect)", "狼蛛 (Tarantula)", "独角仙 (Rhino Beetle)", "巨型蜈蚣 (Centipede)", "巨型毒蝎 (Scorpion)"];
     let displayForm = formNames[player.evolutionStage] || `MARK-${player.evolutionStage}`;
 
     // Relative Level Calculation
@@ -386,6 +386,10 @@ function gameLoop() {
             c.headPos = c.pos.add(new Vec2(Math.cos(c.angle) * 5.5 * c.scale, Math.sin(c.angle) * 5.5 * c.scale));
             c.abdomenPos = c.pos.add(new Vec2(Math.cos(c.angle) * -7 * c.scale, Math.sin(c.angle) * -7 * c.scale));
 
+            if (c.form === 'SCORPION') {
+                c.updateScorpion({});
+            }
+            // Standard Legs (Scorpion legs list is empty, so this is safe to leave or wrap)
             c.legs.forEach(l => l.update(c.thoraxPos, c.angle, c.vel, true));
         } else {
             c.update();
@@ -499,6 +503,7 @@ function gameLoop() {
     if (player.form === 'TARANTULA') baseRadius = 130;
     if (player.form === 'RHINO_BEETLE') baseRadius = 160;
     if (player.form === 'CENTIPEDE') baseRadius = 220;
+    if (player.form === 'SCORPION') baseRadius = 180;
 
     let visualSize = player.scale * baseRadius;
     let desiredZoom = (minDimension * 0.15) / visualSize;

@@ -59,9 +59,14 @@ export function checkCollision(player, prey) {
     // Pillbug Segments
     if (prey.pillBugSegments && prey.pillBugSegments.length > 0) {
         prey.pillBugSegments.forEach(s => {
-            preyZones.push({ pos: new Vec2(s.x, s.y), radius: 5 * (prey.scale || 1) }); // pillBugSegments store {x,y} objects not Vec2? Let's check Insect.js L442. `push({x,y,angle})`. Yes.
-            // But we need to check if Vec2 is imported in this scope? passing 'prey' which has Vec2 methods is fine, but constructing new Vec2 needs import.
-            // Actually, dist check is mathematical.
+            preyZones.push({ pos: new Vec2(s.x, s.y), radius: 5 * (prey.scale || 1) });
+        });
+    }
+
+    // Scorpion Segments
+    if (prey.form === 'SCORPION' && prey.scorpionSegments) {
+        prey.scorpionSegments.forEach(seg => {
+            preyZones.push({ pos: seg.pos, radius: seg.size });
         });
     }
 

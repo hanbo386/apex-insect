@@ -8,6 +8,7 @@ import { StickInsectLeg } from './StickInsectParts.js';
 import { TarantulaLeg } from './TarantulaParts.js';
 import { RhinoBeetleLeg } from './RhinoBeetleParts.js';
 import { CentipedeLeg } from './CentipedeParts.js';
+import { ScorpionLeg, ScorpionClaw } from './ScorpionParts.js';
 
 // --- Standardized Size Configuration ---
 // Defines the scale range for each evolution stage.
@@ -24,7 +25,8 @@ export const STAGE_CONFIG = {
     8: { name: 'STICK_INSECT', startScale: 28.0, endScale: 36.0 },
     9: { name: 'TARANTULA', startScale: 40.0, endScale: 55.0 },
     10: { name: 'RHINO_BEETLE', startScale: 60.0, endScale: 80.0 },
-    11: { name: 'CENTIPEDE', startScale: 70.0, endScale: 100.0 }
+    11: { name: 'CENTIPEDE', startScale: 70.0, endScale: 100.0 },
+    12: { name: 'SCORPION', startScale: 50.0, endScale: 70.0 }
 };
 
 /**
@@ -133,6 +135,13 @@ export class Insect {
         // Let's store them to maintain state/scale if needed. But Reference `drawLeg` is stateless except phase.
         // My CentipedeLeg class is stateless-ish.
         this.centipedeLegPhase = 0;
+
+        // --- Scorpion Properties ---
+        this.scorpionLegs = [];
+        this.scorpionClaws = [];
+        this.scorpionSegments = [];
+        this.scorpionStingProgress = 0;
+        this.scorpionStingTarget = 0;
     }
 
     initLegs() {
@@ -237,6 +246,41 @@ export class Insect {
                 this.centipedeLegs.push(new CentipedeLeg(i, 1, this.scale));
             }
             this.legs = [];
+        } else if (this.form === 'SCORPION') {
+            this.scorpionLegs = [];
+            this.scorpionClaws = [];
+
+            // [Reference] 6 legs (3 pairs)
+            for (let i = 0; i < 3; i++) {
+                this.scorpionLegs.push(new ScorpionLeg(-1, i, this.scale));
+                this.scorpionLegs.push(new ScorpionLeg(1, i, this.scale));
+            }
+            this.scorpionClaws = [new ScorpionClaw(-1, this.scale), new ScorpionClaw(1, this.scale)];
+
+            this.legs = [];
+
+            // Initialize Segments (Always regenerate to ensure correct scaling/positioning)
+            this.scorpionSegments = []; // Force reset
+
+            const totalSegs = 16;
+            // [Reference] Loop
+            for (let i = 0; i < totalSegs; i++) {
+                let size = 10;
+                if (i < 3) size = 16;      // Head
+                else if (i < 9) size = 20 - (i - 3) * 1.2; // Body
+                else size = 8;             // Tail (incl seg 9)
+
+                // Init trailing behind head (-Forward)
+                let offset = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(-i * 8 * this.scale);
+
+                this.scorpionSegments.push({
+                    pos: this.pos.add(offset),
+                    sizeBase: size, // Store base for scaling
+                    size: size * this.scale,
+                    angle: this.angle,
+                    type: i < 3 ? 'head' : (i < 10 ? 'body' : 'tail')
+                });
+            }
         }
         else if (this.form === 'SPIDER') {
             this.spiderLegs = [];
@@ -625,6 +669,10 @@ export class Insect {
             this.form = 'CENTIPEDE';
             this.initLegs();
             formName = "巨型蜈蚣 (CENTIPEDE)";
+        } else if (this.evolutionStage === 12) {
+            this.form = 'SCORPION';
+            this.initLegs();
+            formName = "巨型毒蝎 (SCORPION)";
         }
 
         if (this.onEvolve) this.onEvolve(formName, this.evolutionStage);
@@ -668,6 +716,13 @@ export class Insect {
             if (this.tarantulaLegs) this.tarantulaLegs.forEach(leg => leg.updateScale(this.scale));
             if (this.rhinoLegs) this.rhinoLegs.forEach(leg => leg.updateScale(this.scale));
             if (this.centipedeLegs) this.centipedeLegs.forEach(leg => leg.updateScale(this.scale)); // If any
+            if (this.scorpionLegs) this.scorpionLegs.forEach(leg => leg.updateScale(this.scale));
+            if (this.scorpionClaws) this.scorpionClaws.forEach(claw => claw.updateScale(this.scale));
+            if (this.scorpionSegments) {
+                this.scorpionSegments.forEach(seg => {
+                    seg.size = seg.sizeBase * this.scale;
+                });
+            }
         } else {
             this.scale = effectiveTarget;
         }
@@ -701,7 +756,10 @@ export class Insect {
             let diff = targetAngle - this.angle;
             while (diff <= -Math.PI) diff += Math.PI * 2;
             while (diff > Math.PI) diff -= Math.PI * 2;
-            this.angle += diff * 0.15;
+
+            let turnSpeed = 0.15;
+            if (this.form === 'SCORPION') turnSpeed = 0.08;
+            this.angle += diff * turnSpeed;
         } else {
             targetSpeed = 0;
             // Regen faster when standing still
@@ -724,6 +782,11 @@ export class Insect {
 
 
         this.thoraxPos = this.pos;
+
+        if (this.form === 'SCORPION') {
+            this.updateScorpion(input);
+            return;
+        }
 
         // --- 身体跟随 ---
         let headTarget = this.pos.add(new Vec2(Math.cos(this.angle) * 5.5 * this.scale, Math.sin(this.angle) * 5.5 * this.scale));
@@ -796,6 +859,9 @@ export class Insect {
             return;
         } else if (this.form === 'CENTIPEDE') {
             this.drawCentipede(ctx);
+            return;
+        } else if (this.form === 'SCORPION') {
+            this.drawScorpion(ctx);
             return;
         }
 
@@ -2542,4 +2608,181 @@ export class Insect {
         });
     }
 
+    updateScorpion(input) {
+        // 1. Inputs & State
+        let isAttacking = false;
+        if (input && input.mouseDown) isAttacking = true;
+        if (this.predationState === 'reaching' || this.predationState === 'attacking') isAttacking = true;
+
+        this.scorpionStingTarget = isAttacking ? 1 : (this.scorpionIdleCurl || 0);
+        this.scorpionStingProgress += (this.scorpionStingTarget - this.scorpionStingProgress) * 0.1;
+
+        // 2. Segments IK
+        if (this.scorpionSegments.length > 0) {
+            // Head (0) follows Body (Insect Pos)
+            let head = this.scorpionSegments[0];
+            head.pos = this.pos.clone();
+            head.angle = this.angle;
+
+            // Rest follow chain
+            for (let i = 1; i < this.scorpionSegments.length; i++) {
+                const seg = this.scorpionSegments[i];
+                const prev = this.scorpionSegments[i - 1];
+                const spacing = (seg.type === 'tail' ? 12 : 6) * this.scale;
+
+                // [Reference] Tail Logic
+                if (seg.type === 'tail') {
+                    const tailIndex = i - 10;
+
+                    // Constraint
+                    let constraintVec = seg.pos.sub(prev.pos);
+                    if (constraintVec.mag() > spacing) {
+                        constraintVec = constraintVec.normalize().mult(spacing);
+                        seg.pos = prev.pos.add(constraintVec);
+                    }
+
+                    // Angle points to prev (Trailing)
+                    let angleToPrev = Math.atan2(prev.pos.y - seg.pos.y, prev.pos.x - seg.pos.x);
+                    seg.angle = angleToPrev + Math.PI / 2;
+
+                    // Attack Lerp
+                    if (this.scorpionStingProgress > 0.01) {
+                        // Attack Base: Segment 2 (Body start)
+                        const attackBase = this.scorpionSegments[2].pos;
+
+                        // Attack Dir: Forward relative to Head (Seg 0)
+                        // My Angle 0 is Right. Forward is (cos, sin).
+                        let attackDir = new Vec2(Math.cos(this.scorpionSegments[0].angle), Math.sin(this.scorpionSegments[0].angle));
+
+                        const fwdOffset = 15 * this.scale;
+                        const t = tailIndex / 5; // 0 to 1
+
+                        // Target Point
+                        // Ref: attackBase.add(attackDir.mult(fwdOffset * t)).add(attackDir.mult(-10));
+                        let attackPoint = attackBase
+                            .add(attackDir.mult(fwdOffset * t))
+                            .add(attackDir.mult(-10 * this.scale));
+
+                        const lerp = this.scorpionStingProgress * (0.5 + t * 0.5);
+                        seg.pos.x = seg.pos.x * (1 - lerp) + attackPoint.x * lerp;
+                        seg.pos.y = seg.pos.y * (1 - lerp) + attackPoint.y * lerp;
+                    }
+                } else {
+                    // Body/Head Constraint
+                    let dir = seg.pos.sub(prev.pos);
+                    if (dir.mag() === 0) dir = new Vec2(0, 1);
+                    dir = dir.normalize().mult(spacing);
+                    seg.pos = prev.pos.add(dir);
+                    // Ref: angle = atan2(-dir.y, -dir.x) - PI/2
+                    seg.angle = Math.atan2(-dir.y, -dir.x) - Math.PI / 2;
+                }
+            }
+        }
+
+        // 3. Update Legs & Claws
+        // Ref Legs: update(pos, angle, velocity)
+        this.scorpionLegs.forEach(leg => leg.update(this.pos, this.angle, this.vel));
+
+        // Ref Claws: update(pos, angle, velocity, isAttacking). 
+        // My Class Signature: update(pos, angle, velocity, isAttacking).
+        this.scorpionClaws.forEach(claw => claw.update(this.pos, this.angle, this.vel, (this.scorpionStingTarget > 0.5)));
+    }
+
+    drawScorpion(ctx) {
+        // 1. Shadows
+        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        this.scorpionSegments.forEach(seg => {
+            ctx.beginPath();
+            ctx.ellipse(
+                seg.pos.x + 4 * this.scale,
+                seg.pos.y + 4 * this.scale,
+                seg.size,
+                seg.size * 0.8,
+                seg.angle, 0, Math.PI * 2
+            );
+            ctx.fill();
+        });
+
+        // 2. Legs & Claws
+        this.scorpionLegs.forEach(leg => leg.draw(ctx));
+        this.scorpionClaws.forEach(claw => claw.draw(ctx));
+
+        // 3. Body (Reverse Order)
+        // Ref: 9->3 (Body), 2->0 (Head), 10->End (Tail)
+        for (let i = 9; i >= 3; i--) this.drawScorpionSegment(ctx, i);
+        for (let i = 2; i >= 0; i--) this.drawScorpionSegment(ctx, i);
+        for (let i = 10; i < this.scorpionSegments.length; i++) this.drawScorpionSegment(ctx, i);
+
+        // 4. Stinger (Last Segment)
+        if (this.scorpionSegments.length > 0) {
+            const last = this.scorpionSegments[this.scorpionSegments.length - 1];
+            const s = this.scale;
+
+            ctx.save();
+            ctx.translate(last.pos.x, last.pos.y);
+            ctx.rotate(last.angle);
+
+            ctx.fillStyle = '#8a2020';
+            ctx.beginPath(); ctx.arc(0, 4 * s, 6 * s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+            ctx.beginPath(); ctx.moveTo(0, 10 * s); ctx.quadraticCurveTo(0, 20 * s, 2 * s, 25 * s);
+            ctx.strokeStyle = '#000'; ctx.lineWidth = 2 * s; ctx.stroke();
+            ctx.restore();
+        }
+    }
+
+    drawScorpionSegment(ctx, i) {
+        if (!this.scorpionSegments[i]) return;
+        const seg = this.scorpionSegments[i];
+        const s = this.scale;
+
+        ctx.save();
+        ctx.translate(seg.pos.x, seg.pos.y);
+        ctx.rotate(seg.angle);
+
+        ctx.strokeStyle = '#2d241b';
+        ctx.lineWidth = Math.max(0.5, 1 * s); // Ensure visible even at small scale
+
+        if (seg.type === 'head') {
+            ctx.fillStyle = '#4a3b2a';
+            const w = seg.size;
+            const h = seg.size * 0.8;
+            ctx.beginPath();
+            ctx.moveTo(-w, h);
+            ctx.bezierCurveTo(-w, -h, w, -h, w, h);
+            ctx.lineTo(-w, h);
+            ctx.fill(); ctx.stroke();
+
+            if (i === 1) { // Eyes on middle head segment
+                ctx.fillStyle = 'black';
+                ctx.beginPath(); ctx.arc(0, -5 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(-w + 2 * s, -2 * s, 1 * s, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(w - 2 * s, -2 * s, 1 * s, 0, Math.PI * 2); ctx.fill();
+            }
+        } else if (seg.type === 'body') {
+            ctx.fillStyle = '#5c4935';
+            const w = seg.size;
+            const h = seg.size * 0.35;
+            ctx.beginPath(); ctx.rect(-w, -h, w * 2, h * 2); ctx.fill(); ctx.stroke();
+
+            // Detail Line
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+            ctx.moveTo(0, -h);
+            ctx.lineTo(0, h);
+            ctx.stroke();
+
+        } else if (seg.type === 'tail') {
+            ctx.fillStyle = '#755c42';
+            const w = seg.size;
+            const h = seg.size * 1.5;
+            ctx.beginPath();
+            ctx.moveTo(-w, -h / 2); ctx.lineTo(w, -h / 2); ctx.lineTo(w * 0.8, h / 2); ctx.lineTo(-w * 0.8, h / 2);
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+
+            ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath(); ctx.moveTo(-w * 0.5, 0); ctx.lineTo(w * 0.5, 0); ctx.stroke();
+        }
+        ctx.restore();
+    }
 }
