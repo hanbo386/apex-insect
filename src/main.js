@@ -788,7 +788,7 @@ function gameLoop() {
     if (player.form === 'STICK_INSECT') baseRadius = 150;
     if (player.form === 'TARANTULA') baseRadius = 130;
     if (player.form === 'RHINO_BEETLE') baseRadius = 160;
-    if (player.form === 'CENTIPEDE') baseRadius = 220;
+    if (player.form === 'GIANT_WETA') baseRadius = 240; // Force zoom out
     if (player.form === 'CENTIPEDE') baseRadius = 220;
     if (player.form === 'SCORPION') baseRadius = 180;
     if (player.form === 'TITAN') baseRadius = 450;
