@@ -515,7 +515,7 @@ function gameLoop() {
                 let visionRange = (c.visionRadius || 400) * (c.scale || 1.0);
                 let isFocused = false;
 
-                if (c.evolutionStage > player.evolutionStage && distToPlayer < visionRange) {
+                if (c.evolutionStage > player.evolutionStage && distToPlayer < visionRange * 0.6) {
                     // Chase!
                     isFocused = true;
                     let angleToPlayer = Math.atan2(player.pos.y - c.pos.y, player.pos.x - c.pos.x);
@@ -529,6 +529,13 @@ function gameLoop() {
 
                     if (distToPlayer < 40 * c.scale) {
                         // CAUGHT!
+                        if (player.evolutionStage <= 1) {
+                            // Game Over if Ant(1) or Primitive(0)
+                            alert("游戏失败！你被捕食了。");
+                            location.reload();
+                            return;
+                        }
+
                         if (player.evolutionStage > 0) {
                             player.devolve();
                             createParticles(player.pos.x, player.pos.y, '#ff0000', 30 * player.scale, 20);
