@@ -45,6 +45,23 @@ export function checkCollision(player, prey) {
             // So we need to push objects that look like { pos: {x,y}, radius }.
             preyZones.push({ pos: new Vec2(seg.x, seg.y), radius: 10 * (prey.scale || 1) });
         });
+    } else if (prey.form === 'GIANT_WETA') {
+        // Giant Weta: Long body, ensure full coverage
+        let backDir = new Vec2(Math.cos(prey.angle), Math.sin(prey.angle)).mult(-1);
+        let s = prey.scale || 1.0;
+        // Thorax/Head area
+        preyZones.push({ pos: prey.pos, radius: 25 * s });
+        // Abdomen segments
+        preyZones.push({ pos: prey.pos.add(backDir.mult(30 * s)), radius: 25 * s });
+        preyZones.push({ pos: prey.pos.add(backDir.mult(60 * s)), radius: 22 * s });
+        preyZones.push({ pos: prey.pos.add(backDir.mult(90 * s)), radius: 15 * s });
+    } else if (prey.form === 'CRICKET') {
+        // Cricket: Similar to Weta but smaller
+        let backDir = new Vec2(Math.cos(prey.angle), Math.sin(prey.angle)).mult(-1);
+        let s = prey.scale || 1.0;
+        preyZones.push({ pos: prey.pos, radius: 20 * s });
+        preyZones.push({ pos: prey.pos.add(backDir.mult(25 * s)), radius: 18 * s });
+        preyZones.push({ pos: prey.pos.add(backDir.mult(50 * s)), radius: 15 * s });
     } else {
         if (prey.abdomenPos) preyZones.push({ pos: prey.abdomenPos, radius: 5 * (prey.scale || 1) * radiusMult });
     }

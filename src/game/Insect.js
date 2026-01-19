@@ -691,7 +691,8 @@ export class Insect {
 
         // Increase difficulty for next stage
         // Base XP requirement for Level 1 of new stage should be higher
-        this.xpToNext = 5 * Math.pow(2.5, this.evolutionStage);
+        // Base XP requirement for Level 1 of new stage should be higher but not crazy
+        this.xpToNext = 10 * Math.pow(1.6, this.evolutionStage);
         this.xpToNext = Math.floor(this.xpToNext);
 
         let formName = "";
