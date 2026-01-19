@@ -741,7 +741,9 @@ function gameLoop() {
             // Attempt to start predation animation
             if (player.startPredation(c, (pos) => {
                 // Callback when eat logic triggers (Apex of lunge or Mouth reach)
-                let xpGain = c.isRival ? 20 * (c.scale) : (1 + Math.floor(c.size));
+                // XP Calculation Fixed: Use Evolution Stage power, not Scale (which shrinks on Reset)
+                let stagePower = c.evolutionStage !== undefined ? Math.pow(1.5, c.evolutionStage) : 0;
+                let xpGain = c.isRival ? Math.floor(20 * stagePower) : (1 + Math.floor(c.size * (c.scale || 1)));
                 player.gainXp(xpGain);
                 if (pos) {
                     // Juicy particles at the bite location
