@@ -427,6 +427,30 @@ function gameLoop() {
     };
 
     player.update(input);
+
+    // --- OBSTACLE COLLISION LOGIC ---
+    // 1. LEAVES: Only Primitive(0) and Ant(1) blocked.
+    // 2. PUDDLES: ALL creatures in Scene 1 blocked.
+    // "Scene 1" implies Tier 1 (no world scale divisor / or low scaler).
+    // Assuming standard world = Scene 1.
+    // Even High Stages (Titans) can't cross puddles in Scene 1.
+
+    // Check type of collision
+    let obstacleHit = env.checkObstacleCollision(player.pos.x, player.pos.y, 10 * player.scale, player.evolutionStage <= 1, true);
+
+    if (obstacleHit) {
+        let obsPos = new Vec2(obstacleHit.x, obstacleHit.y);
+        let pushDir = player.pos.sub(obsPos).normalize();
+        if (pushDir.mag() === 0) pushDir = new Vec2(Math.random() - 0.5, Math.random() - 0.5).normalize();
+
+        let overlap = (obstacleHit.radius + 10 * player.scale) - player.pos.dist(obsPos);
+        if (overlap > 0) {
+            player.pos = player.pos.add(pushDir.mult(overlap));
+            // Optional: Bounce velocity
+            // player.vel = player.vel.add(pushDir.mult(5));
+        }
+    }
+
     updateUI();
 
     // Creep Logic
@@ -550,6 +574,29 @@ function gameLoop() {
             c.legs.forEach(l => l.update(c.thoraxPos, c.angle, c.vel, true));
         } else {
             c.update();
+        }
+
+        // --- NPC OBSTACLE COLLISION ---
+        // NPCs must also go around puddles. 
+        // Leaf logic for NPCs: Assuming same rule (Low stage < 2 blocked).
+        let npcStage = c.evolutionStage || 0;
+        let npcRadius = (c.size || 10) * (c.scale || 1.0);
+
+        let npcObs = env.checkObstacleCollision(c.pos.x, c.pos.y, npcRadius, npcStage <= 1, true);
+        if (npcObs) {
+            let obsPos = new Vec2(npcObs.x, npcObs.y);
+            let pushDir = c.pos.sub(obsPos).normalize();
+            if (pushDir.mag() === 0) pushDir = new Vec2(Math.random() - 0.5, Math.random() - 0.5).normalize();
+
+            let overlap = (npcObs.radius + npcRadius) - c.pos.dist(obsPos);
+            if (overlap > 0) {
+                c.pos = c.pos.add(pushDir.mult(overlap));
+                // Add avoidance force to velocity to help them steer around
+                // c.vel = c.vel.add(pushDir.mult(0.5)); 
+                // But simplified pos update is cleaner for now.
+
+                // If standard update logic is used, changing pos is fine.
+            }
         }
 
         // 距离过远销毁
