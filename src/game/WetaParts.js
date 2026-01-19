@@ -111,8 +111,9 @@ export class WetaLeg {
     }
 
     update(bodyPos, bodyAngle, velocity, speed, scale = 1.0) {
-        // let forward = velocity.mag() > 0.1 ? velocity.normalize() : new Vec2(Math.cos(bodyAngle), Math.sin(bodyAngle));
         let speedFactor = velocity.mag() * 15 * scale;
+        // Cap speedFactor to prevent legs exploding out
+        if (speedFactor > 60 * scale) speedFactor = 60 * scale;
 
         let targetLocal = new Vec2(0, 0);
 
@@ -120,9 +121,11 @@ export class WetaLeg {
         if (this.index === 0) {
             targetLocal = new Vec2(65 * scale + speedFactor, this.side * 25 * scale);
         } else if (this.index === 1) {
-            targetLocal = new Vec2(-45 * scale, this.side * 80 * scale);
+            // Move mid legs slightly forward prevent drag look
+            targetLocal = new Vec2(-25 * scale, this.side * 80 * scale);
         } else if (this.index === 2) {
-            targetLocal = new Vec2(-170 * scale, this.side * 60 * scale);
+            // Move back legs slightly forward
+            targetLocal = new Vec2(-140 * scale, this.side * 60 * scale);
         }
 
         let idealGlobal = bodyPos.add(targetLocal.rotate(bodyAngle));
@@ -130,9 +133,9 @@ export class WetaLeg {
 
         // --- Movement Logic ---
 
-        // 1. Thresholds
-        let stepThreshold = 55 * scale;
-        if (this.index === 2) stepThreshold = 75 * scale;
+        // 1. Thresholds - Reduced by ~20%
+        let stepThreshold = 45 * scale;
+        if (this.index === 2) stepThreshold = 60 * scale;
 
         // 2. Check Stretch
         let scaledOffset = this.anchorOffset.mult(scale);
@@ -140,8 +143,9 @@ export class WetaLeg {
         let shoulderPos = bodyPos.add(shoulderOffset);
         let currentLegLength = this.footPos.dist(shoulderPos);
         let maxLegLength = (this.l1 + this.l2) * scale;
-        // Tolerance 0.96
-        let isStretched = currentLegLength > maxLegLength * 0.96;
+
+        // Stricter stretch check (0.96 -> 0.90) to force step before full extend
+        let isStretched = currentLegLength > maxLegLength * 0.90;
 
         if (!this.isStepping && (distToTarget > stepThreshold || isStretched)) {
             this.isStepping = true;
@@ -149,7 +153,7 @@ export class WetaLeg {
             this.startStepPos = this.footPos.copy();
 
             // 3. Prediction
-            let predFactor = this.index === 2 ? 0.8 : 0.5;
+            let predFactor = this.index === 2 ? 1.0 : 0.8;
 
             let prediction = velocity.mag() > 0.1 ? velocity.normalize().mult(stepThreshold * predFactor) : new Vec2(0, 0);
 
@@ -161,7 +165,7 @@ export class WetaLeg {
 
         if (this.isStepping) {
             // 4. Step Progress
-            this.stepProgress += 0.15;
+            this.stepProgress += 0.25;
 
             if (this.stepProgress >= 1) {
                 this.stepProgress = 1;
