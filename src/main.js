@@ -570,6 +570,12 @@ function gameLoop() {
 
             if (c.form === 'SCORPION') {
                 c.updateScorpion({});
+            } else if (c.form === 'GIANT_WETA') {
+                if (c.wetaLegs) c.wetaLegs.forEach(leg => leg.update(c.pos, c.angle, c.vel, c.maxSpeed, c.scale));
+                if (c.wetaAntennae) c.wetaAntennae.forEach((ant, i) => {
+                    let side = (i === 0) ? -1 : 1;
+                    ant.update(c.pos, c.angle, side);
+                });
             }
             // Standard Legs (Scorpion legs list is empty, so this is safe to leave or wrap)
             c.legs.forEach(l => l.update(c.thoraxPos, c.angle, c.vel, true));
