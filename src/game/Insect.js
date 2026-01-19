@@ -58,6 +58,12 @@ export class Insect {
         const config = STAGE_CONFIG[0];
         this.baseScale = config.startScale;
         this.targetScale = config.startScale;
+
+        // --- AI Properties ---
+        this.visionRadius = 400; // Base vision, will scale
+        this.chaseTimer = 0;
+        this.isChasing = false;
+        this.isFleeing = false;
         this.scale = config.startScale;
 
         // --- Prestige / World Reset Multiplier ---
@@ -635,6 +641,29 @@ export class Insect {
 
         // Re-init legs for final form
         this.initLegs();
+        this.initLegs();
+    }
+
+    devolve() {
+        if (this.evolutionStage > 0) {
+            this.evolutionStage--;
+            this.level = 1;
+            this.xp = 0;
+
+            // Re-apply stage properties
+            // Effectively we can use setLevel(targetStage, 1) but we need to ensure it triggers the form update logic.
+            // setLevel calls initLegs but doesn't necessarily set 'form' string unless we copy the massive switch from evolve.
+            // Actually, setLevel relies on loop calling evolve().
+            // So we can set stage to target-1 and call evolve().
+
+            let targetStage = this.evolutionStage;
+
+            // Reset to 0 and re-evolve to target to ensure all props are correct
+            // This is slightly expensive but safest for state consistency.
+            this.setLevel(targetStage, 1);
+
+            console.log(`Devolved to Stage ${this.evolutionStage}`);
+        }
     }
 
     evolve(isInstant = false) {

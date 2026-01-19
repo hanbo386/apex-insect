@@ -509,54 +509,76 @@ function gameLoop() {
 
                 c.update(c.pos, c.angle, c.vel); // Update legs
             } else {
-                // Normal AI
-                c.angle += (Math.random() - 0.5) * 0.2;
-                // Scale speed with size so they don't look like they are crawling
-                let npcSpeed = 1.5 * (c.scale || 1.0);
-                c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(npcSpeed);
+                // --- RIVAL AI LOGIC ---
+                // 1. PREDATOR BEHAVIOR (Higher Stage)
+                let distToPlayer = c.pos.dist(player.pos);
+                let visionRange = (c.visionRadius || 400) * (c.scale || 1.0);
+                let isFocused = false;
+
+                if (c.evolutionStage > player.evolutionStage && distToPlayer < visionRange) {
+                    // Chase!
+                    isFocused = true;
+                    let angleToPlayer = Math.atan2(player.pos.y - c.pos.y, player.pos.x - c.pos.x);
+                    let angleDiff = angleToPlayer - c.angle;
+                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                    c.angle += Math.max(-0.1, Math.min(0.1, angleDiff));
+
+                    let chaseSpeed = 3.5 * (c.scale || 1.0);
+                    c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(chaseSpeed);
+
+                    if (distToPlayer < 40 * c.scale) {
+                        // CAUGHT!
+                        if (player.evolutionStage > 0) {
+                            player.devolve();
+                            createParticles(player.pos.x, player.pos.y, '#ff0000', 30 * player.scale, 20);
+                            let pushDir = player.pos.sub(c.pos).normalize();
+                            player.pos = player.pos.add(pushDir.mult(150));
+                        }
+                    }
+                }
+                // 2. PREY BEHAVIOR (Lower Stage)
+                else if (c.evolutionStage < player.evolutionStage && distToPlayer < visionRange) {
+                    // Flee!
+                    isFocused = true;
+                    let angleAway = Math.atan2(c.pos.y - player.pos.y, c.pos.x - player.pos.x);
+                    let angleDiff = angleAway - c.angle;
+                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                    c.angle += Math.max(-0.1, Math.min(0.1, angleDiff));
+
+                    let fleeSpeed = 3.8 * (c.scale || 1.0);
+                    c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(fleeSpeed);
+                }
+
+                // 3. WANDER (Default)
+                if (!isFocused) {
+                    c.angle += (Math.random() - 0.5) * 0.2;
+                    let wanderSpeed = 1.5 * (c.scale || 1.0);
+                    c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(wanderSpeed);
+                }
+
                 c.pos = c.pos.add(c.vel);
+                c.speed = c.vel.mag();
 
-                // Sync speed for animation
-                c.speed = npcSpeed;
+                c.thoraxPos = c.pos;
+                c.headPos = c.pos.add(new Vec2(Math.cos(c.angle) * 5.5 * c.scale, Math.sin(c.angle) * 5.5 * c.scale));
+                c.abdomenPos = c.pos.add(new Vec2(Math.cos(c.angle) * -7 * c.scale, Math.sin(c.angle) * -7 * c.scale));
 
-                // Insect.update() usually handles this internally if passed input?
-                // But NPC Insects here are simplified?
-                // Insect.js update() takes (input, dt).
-                // Here we manually pos += vel? 
-                // We should probably call c.update(null, dt) if we want full logic.
-                // But checking code at line 300+, we see `c.update(c.pos, c.angle...)` being called?
-                // Ah, line 403 in original: `c.updateVisuals` perhaps?
-                // Let's assume standard update logic for legged insects is needed.
-                // Looking at Insect.js, update() does pos += vel.
-                // So here in main loop if we do pos += vel MANUALLY, we might be double moving if we call c.update()?
-                // Let's look at `Insect.js` again. `update(input)` calculates vel from input.
-                // NPCs don't have input.
-                // So manual pos update is correct.
-                // Then we need to update legs.
+                c.updateVisuals();
 
-                // Accessing internal leg update if available, or just rely on visual update.
-                // Actually Insect.js:883 calls leg.update().
-                // We need to call something that updates legs.
-                // `c.updateVisuals()`? No, it's inside `update`.
-                // Let's check `Insect.js`.
-
-                // Workaround: Call leg updates manually or mock update?
-                // Best to invoke `c.updateArms/Legs`?
-                // Insect.js `update` method calls `this.updateVisuals()` AND leg update.
-                // If we don't call c.update(), legs won't move.
-                // We should simulate input? 
-                // Or just set `c.vel` and assume `c.draw` handles it?
-                // `c.draw` needs `thoraxPos` updated.
-                c.thoraxPos = c.pos; // Ensure thorax follows
-
-                // Manually update legs (Copied from Insect.js logic roughly or relying on what was there)
-                // Original file had `c.update(c.pos...)`? No, the previous view didn't show the end of the loop.
-                // Let's assume we need to update legs.
+                // Manual Leg Updates
                 if (c.legs) {
                     c.legs.forEach(l => {
-                        // Assuming Leg.update takes (pos, angle, vel) or similar
-                        // TitanLeg takes (dt, vel). Standard Leg takes (pos, angle, vel, moving).
                         if (l.update) l.update(c.pos, c.angle, c.vel, true);
+                    });
+                }
+                if (c.form === 'SCORPION') c.updateScorpion({});
+                if (c.form === 'GIANT_WETA') {
+                    if (c.wetaLegs) c.wetaLegs.forEach(leg => leg.update(c.pos, c.angle, c.vel, c.maxSpeed, c.scale));
+                    if (c.wetaAntennae) c.wetaAntennae.forEach((ant, i) => {
+                        let side = (i === 0) ? -1 : 1;
+                        ant.update(c.pos, c.angle, side);
                     });
                 }
             }
@@ -580,11 +602,12 @@ function gameLoop() {
             // Standard Legs (Scorpion legs list is empty, so this is safe to leave or wrap)
             c.legs.forEach(l => l.update(c.thoraxPos, c.angle, c.vel, true));
         } else {
+            // Food Logic
             c.update();
         }
 
         // --- NPC OBSTACLE COLLISION ---
-        // NPCs must also go around puddles. 
+        // NPCs must also go around puddles.
         // Leaf logic for NPCs: Assuming same rule (Low stage < 2 blocked).
         let npcStage = c.evolutionStage || 0;
         let npcRadius = (c.size || 10) * (c.scale || 1.0);
