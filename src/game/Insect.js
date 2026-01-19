@@ -10,6 +10,7 @@ import { RhinoBeetleLeg } from './RhinoBeetleParts.js';
 import { CentipedeLeg } from './CentipedeParts.js';
 import { ScorpionLeg, ScorpionClaw } from './ScorpionParts.js';
 import { TitanLeg, TitanUtils } from './TitanParts.js';
+import { WetaLeg, WetaAntenna, drawGiantWeta } from './WetaParts.js';
 
 // --- Standardized Size Configuration ---
 // Defines the scale range for each evolution stage.
@@ -22,7 +23,7 @@ export const STAGE_CONFIG = {
     5: { name: 'SPIDER', startScale: 6.5, endScale: 10.0 },
     6: { name: 'MANTIS', startScale: 12.0, endScale: 18.0 },
     7: { name: 'CRICKET', startScale: 20.0, endScale: 26.0 },
-    8: { name: 'RHINO_BEETLE', startScale: 35.0, endScale: 45.0 },
+    8: { name: 'GIANT_WETA', startScale: 35.0, endScale: 45.0 },
     9: { name: 'STICK_INSECT', startScale: 60.0, endScale: 80.0 },
     10: { name: 'TARANTULA', startScale: 100.0, endScale: 130.0 },
     11: { name: 'CENTIPEDE', startScale: 150.0, endScale: 200.0 },
@@ -125,9 +126,9 @@ export class Insect {
         this.stepGroup = 0; // Shared step group logic
         this.moveDist = 0;
 
-        // --- Rhino Beetle Properties ---
-        this.rhinoLegs = [];
-        this.rhinoWalkCycle = 0;
+        // --- Giant Weta Properties ---
+        this.wetaLegs = [];
+        this.wetaAntennae = [];
 
         // --- Centipede Properties ---
         this.centipedeSegments = []; // Array of {x, y, angle}
@@ -300,6 +301,24 @@ export class Insect {
                     type: i < 3 ? 'head' : (i < 10 ? 'body' : 'tail')
                 });
             }
+        } else if (this.form === 'GIANT_WETA') {
+            this.wetaLegs = [];
+            this.wetaAntennae = [];
+            // Initialize using Reference Constants
+
+            this.wetaLegs.push(new WetaLeg(-1, 0, new Vec2(40, -14), 30, 35));
+            this.wetaLegs.push(new WetaLeg(1, 0, new Vec2(40, 14), 30, 35));
+            this.wetaLegs.push(new WetaLeg(-1, 1, new Vec2(5, -22), 40, 45));
+            this.wetaLegs.push(new WetaLeg(1, 1, new Vec2(5, 22), 40, 45));
+            this.wetaLegs.push(new WetaLeg(-1, 2, new Vec2(-48, -18), 75, 85));
+            this.wetaLegs.push(new WetaLeg(1, 2, new Vec2(-48, 18), 75, 85));
+
+            // Antennae: 20 segments, 8 length, 0.15 stiffness
+            this.wetaAntennae.push(new WetaAntenna(20, 8, 0.15));
+            this.wetaAntennae.push(new WetaAntenna(20, 8, 0.15));
+
+            // Clear generic legs just in case
+            this.legs = [];
         }
         else if (this.form === 'TITAN') {
             this.titanLegs = [];
@@ -747,10 +766,10 @@ export class Insect {
             this.initLegs();
             formName = "蟋蟀 (CRICKET)";
         } else if (this.evolutionStage === 8) {
-            this.form = 'RHINO_BEETLE';
-            this.maxSpeed *= 1.1;
+            this.form = 'GIANT_WETA';
+            this.maxSpeed *= 1.25; // More agile
             this.initLegs();
-            formName = "独角仙 (RHINO BEETLE)";
+            formName = "大沙螽 (GIANT WETA)";
         } else if (this.evolutionStage === 9) {
             this.form = 'STICK_INSECT';
             this.maxSpeed *= 1.1;
@@ -901,6 +920,16 @@ export class Insect {
             // For now, let's just leave it, but fix the duplication.
             // Ideally passing 'dt' if available or 0.016.
             this.updateTitan(0.016);
+            this.updateTitan(0.016);
+            return;
+        } else if (this.form === 'GIANT_WETA') {
+            // Update Weta Legs
+            this.wetaLegs.forEach(leg => leg.update(this.pos, this.angle, this.vel, this.maxSpeed, this.scale));
+            // Update Weta Antennae (Need head pos for root)
+            this.wetaAntennae.forEach((ant, i) => {
+                let side = (i === 0) ? -1 : 1;
+                ant.update(this.pos, this.angle, side);
+            });
             return;
         }
 
@@ -972,6 +1001,9 @@ export class Insect {
             return;
         } else if (this.form === 'RHINO_BEETLE') {
             this.drawRhinoBeetle(ctx);
+            return;
+        } else if (this.form === 'GIANT_WETA') {
+            drawGiantWeta(ctx, this);
             return;
         } else if (this.form === 'CENTIPEDE') {
             this.drawCentipede(ctx);

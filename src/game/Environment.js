@@ -27,13 +27,28 @@ export class Environment {
         }
     }
 
-    draw(ctx, camera, width, height, scale = 1.0, renormalizationFactor = 1.0) {
+    draw(ctx, camera, width, height, scale = 1.0, tier = 1) {
         ctx.save();
+        // Remove renormalizationFactor from method sig as it was unused in logic/replaced by fixed grid
+        // but verify generic call site. main.js calls it with 6 args... 
+        // We have: draw(ctx, camera, width, height, scale, tier) -- 6 args exactly. Perfect.
 
         // 1. Adaptive Background Color
-        ctx.fillStyle = '#e6dcc3';
+        if (typeof tier !== 'undefined' && tier === 2) {
+            ctx.fillStyle = '#eaddbb'; // Sandy color for Tier 2
+        } else {
+            ctx.fillStyle = '#e6dcc3'; // Standard dirt
+        }
         // Cover a huge area to ensure no flickering edges
         ctx.fillRect(camera.x - width / scale, camera.y - height / scale, width * 3 / scale, height * 3 / scale);
+
+        // --- SAND GRAINS (TIER 2 VISUAL ONLY) ---
+        if (typeof tier !== 'undefined' && tier === 2) {
+            // Draw noise pattern "on screen"
+            // Using stable random based on screen coordinates? No, must anchor to world.
+            // We can use a pattern or just draw random noise in the loop below.
+            // Let's add noise in the loop below.
+        }
 
         let centerX = camera.x + width / 2;
         let centerY = camera.y + height / 2;
@@ -74,7 +89,7 @@ export class Environment {
                 let seedX = cx + i * fixedGridSize;
                 let seedY = cy + j * fixedGridSize;
                 // Draw Objects - Always at scale 1.0 logic (gridSize 500)
-                this.pseudoRandomDecor(ctx, seedX, seedY, fixedGridSize);
+                this.pseudoRandomDecor(ctx, seedX, seedY, fixedGridSize, tier);
             }
         }
 
@@ -139,26 +154,55 @@ export class Environment {
         return null;
     }
 
-    // Unified Collision (Leaves + Puddles)
-    checkObstacleCollision(x, y, radius, checkLeaves = true, checkPuddles = true) {
+    // Unified Collision (Leaves + Puddles + Stones/Mushrooms)
+    checkObstacleCollision(x, y, radius, checkLeaves = true, checkPuddles = true, tier = 1) {
         // 1. PUDDLES (Check First, always valid)
         if (checkPuddles) {
             let hit = this.checkPuddleCollision(x, y, radius);
             if (hit) return hit;
         }
 
-        // 2. LEAVES (Standard Grid)
-        if (checkLeaves) {
-            let gridSize = 500;
-            let cx = Math.floor(x / gridSize) * gridSize;
-            let cy = Math.floor(y / gridSize) * gridSize;
+        let gridSize = 500;
+        let cx = Math.floor(x / gridSize) * gridSize;
+        let cy = Math.floor(y / gridSize) * gridSize;
 
-            for (let i = -1; i <= 1; i++) {
-                for (let j = -1; j <= 1; j++) {
-                    let baseX = cx + i * gridSize;
-                    let baseY = cy + j * gridSize;
+        for (let i = -1; i <= 1; i++) {
+            for (let j = -1; j <= 1; j++) {
+                let baseX = cx + i * gridSize;
+                let baseY = cy + j * gridSize;
+                let seed = Math.abs((Math.sin(baseX * 12.9898 + baseY * 78.233) * 43758.5453));
 
-                    let seed = Math.abs((Math.sin(baseX * 12.9898 + baseY * 78.233) * 43758.5453));
+                // --- TIER 2 OBSTACLES (Stones, Mushrooms) ---
+                if (tier === 2) {
+                    // Stone: 2% Chance
+                    if ((seed * 10) % 1 < 0.02) {
+                        let sx = baseX + ((seed * 555) % 1) * gridSize;
+                        let sy = baseY + ((seed * 777) % 1) * gridSize;
+                        // Varied Size: 30 to 70
+                        let sSize = (30 + (seed % 1) * 40);
+
+                        let distSq = (x - sx) ** 2 + (y - sy) ** 2;
+                        // Collision roughly matches visual size
+                        let rSum = radius + sSize * 0.9;
+                        if (distSq < rSum * rSum) return { x: sx, y: sy, radius: sSize * 0.9, type: 'stone' };
+                        continue;
+                    }
+                    // Mushroom: 1.5% Chance
+                    else if ((seed * 20) % 1 < 0.015) {
+                        let mx = baseX + ((seed * 888) % 1) * gridSize;
+                        let my = baseY + ((seed * 999) % 1) * gridSize;
+                        // Varied Mushroom Size: 35-55
+                        let mSize = 35 + ((seed * 100) % 1) * 20;
+
+                        let distSq = (x - mx) ** 2 + (y - my) ** 2;
+                        let rSum = radius + mSize;
+                        if (distSq < rSum * rSum) return { x: mx, y: my, radius: mSize, type: 'mushroom' };
+                        continue;
+                    }
+                }
+
+                // 2. LEAVES (Standard Grid)
+                if (checkLeaves) {
                     // Halve the count multiplier (Old: * 4, New: * 2)
                     let count = Math.floor((seed - Math.floor(seed)) * 2);
                     let scaleFactor = gridSize / 500;
@@ -279,8 +323,113 @@ export class Environment {
         }
     }
 
-    pseudoRandomDecor(ctx, baseX, baseY, gridSize) {
+    pseudoRandomDecor(ctx, baseX, baseY, gridSize, tier = 1) {
         let seed = Math.abs((Math.sin(baseX * 12.9898 + baseY * 78.233) * 43758.5453));
+
+        // --- TIER 2: Sand Grains & Special Objects ---
+        if (tier === 2) {
+            // 1. Sand Grains (Visual Noise)
+            ctx.fillStyle = '#dcb68a'; // Darker sand grain
+            // Deterministic loop for grains
+            for (let g = 0; g < 12; g++) {
+                let gs = Math.abs(Math.sin(baseX + g * 55.1) * 1234.5);
+                let gx = baseX + (gs % 1) * gridSize;
+                let gy = baseY + ((gs * 10) % 1) * gridSize;
+                // Tiny 2x2 dot
+                ctx.fillRect(gx, gy, 3, 3);
+            }
+
+            // 2. Stones (Irregular Shapes)
+            if ((seed * 10) % 1 < 0.02) {
+                let sx = baseX + ((seed * 555) % 1) * gridSize;
+                let sy = baseY + ((seed * 777) % 1) * gridSize;
+                let sSize = (30 + (seed % 1) * 40); // 30-70 radius
+
+                ctx.save();
+                ctx.translate(sx, sy);
+
+                // Varied Grey Color
+                let grayVal = Math.floor(100 + (seed % 1) * 60);
+                ctx.fillStyle = `rgb(${grayVal}, ${grayVal}, ${grayVal})`;
+                ctx.strokeStyle = `rgb(${grayVal - 30}, ${grayVal - 30}, ${grayVal - 30})`;
+                ctx.lineWidth = 3;
+
+                ctx.beginPath();
+                // Irregular jagged polygon
+                let points = 7 + Math.floor((seed * 100) % 5); // 7-11 points
+                for (let i = 0; i < points; i++) {
+                    let angle = (i / points) * Math.PI * 2;
+                    // Vary radius by +/- 20%
+                    let rMod = sSize * (0.8 + Math.abs(Math.sin(angle * 3 + seed * 10)) * 0.4);
+                    let rx = Math.cos(angle) * rMod;
+                    let ry = Math.sin(angle) * rMod;
+                    if (i === 0) ctx.moveTo(rx, ry);
+                    else ctx.lineTo(rx, ry);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // Internal Cracks / Details
+                ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(-sSize * 0.4, -sSize * 0.2);
+                ctx.lineTo(sSize * 0.2, sSize * 0.3);
+                ctx.lineTo(sSize * 0.5, sSize * 0.1);
+                ctx.stroke();
+
+                ctx.restore();
+                return;
+            }
+
+            // 3. Mushrooms (Top-Down View)
+            else if ((seed * 20) % 1 < 0.015) {
+                let mx = baseX + ((seed * 888) % 1) * gridSize;
+                let my = baseY + ((seed * 999) % 1) * gridSize;
+                let mSize = 35 + ((seed * 100) % 1) * 20;
+
+                ctx.save();
+                ctx.translate(mx, my);
+
+                // Rotate randomly
+                let mRot = (seed * 500) % (Math.PI * 2);
+                ctx.rotate(mRot);
+
+                // Cap (perfect circle or slight ellipse)
+                ctx.fillStyle = '#d44'; // Red Cap
+                if ((seed * 10) % 1 > 0.5) ctx.fillStyle = '#8b4513'; // Brown Cap variant
+
+                ctx.beginPath();
+                ctx.arc(0, 0, mSize, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Shadow/Rim
+                ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                // Dots (Top Down) - If Red
+                if (ctx.fillStyle === '#d44' || true) { // Always draw dots for texture
+                    ctx.fillStyle = '#fff';
+                    // Random dots
+                    let dotCount = 3 + Math.floor((seed * 50) % 5);
+                    for (let d = 0; d < dotCount; d++) {
+                        let dAngle = (d / dotCount) * Math.PI * 2 + seed;
+                        let dDist = mSize * (0.3 + ((seed * d * 10) % 1) * 0.4); // 30-70% out
+                        let dSize = 3 + ((seed * d * 5) % 1) * 3;
+
+                        ctx.beginPath();
+                        ctx.arc(Math.cos(dAngle) * dDist, Math.sin(dAngle) * dDist, dSize, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+
+                ctx.restore();
+                return;
+            }
+        }
+
         let count = Math.floor((seed - Math.floor(seed)) * 2); // Reduced density (Halved)
 
 

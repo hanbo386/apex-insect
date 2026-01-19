@@ -69,7 +69,7 @@ function updateUI() {
     // 4: 蟑螂 (Cockroach)
     // 5: 蜘蛛 (Spider)
     // 6: 螳螂 (Mantis)
-    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)", "蜘蛛 (Spider)", "螳螂 (Mantis)", "蟋蟀 (Cricket)", "独角仙 (Rhino Beetle)", "竹节虫 (Stick Insect)", "狼蛛 (Tarantula)", "巨型蜈蚣 (Centipede)", "巨型毒蝎 (Scorpion)"];
+    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)", "蜘蛛 (Spider)", "螳螂 (Mantis)", "蟋蟀 (Cricket)", "大沙螽 (Giant Weta)", "竹节虫 (Stick Insect)", "狼蛛 (Tarantula)", "巨型蜈蚣 (Centipede)", "巨型毒蝎 (Scorpion)"];
     let displayForm = formNames[player.evolutionStage] || `MARK-${player.evolutionStage}`;
 
     // Relative Level Calculation
@@ -436,7 +436,8 @@ function gameLoop() {
     // Even High Stages (Titans) can't cross puddles in Scene 1.
 
     // Check type of collision
-    let obstacleHit = env.checkObstacleCollision(player.pos.x, player.pos.y, 10 * player.scale, player.evolutionStage <= 1, true);
+    let currentTier = (player.worldScaleModifier && player.worldScaleModifier <= 0.5) ? 2 : 1;
+    let obstacleHit = env.checkObstacleCollision(player.pos.x, player.pos.y, 1.0, player.evolutionStage <= 1, true, currentTier);
 
     if (obstacleHit) {
         let obsPos = new Vec2(obstacleHit.x, obstacleHit.y);
@@ -581,8 +582,9 @@ function gameLoop() {
         // Leaf logic for NPCs: Assuming same rule (Low stage < 2 blocked).
         let npcStage = c.evolutionStage || 0;
         let npcRadius = (c.size || 10) * (c.scale || 1.0);
+        let nTier = currentTier; // Use same tier as player environment
 
-        let npcObs = env.checkObstacleCollision(c.pos.x, c.pos.y, npcRadius, npcStage <= 1, true);
+        let npcObs = env.checkObstacleCollision(c.pos.x, c.pos.y, npcRadius, npcStage <= 1, true, nTier);
         if (npcObs) {
             let obsPos = new Vec2(npcObs.x, npcObs.y);
             let pushDir = c.pos.sub(obsPos).normalize();
@@ -827,7 +829,8 @@ function gameLoop() {
     // Actually, since player shrunk, the existing grid (500px) NOW looks huge (rel to player).
     // So we don't need to change environment drawing AT ALL.
     // The "Giant Grid" effect happens naturally because the player is tiny!
-    env.draw(ctx, camera, width, height, window.gameScale);
+    // Pass currentTier to draw function
+    env.draw(ctx, camera, width, height, window.gameScale, currentTier);
 
     // Draw Creeps
     creeps.forEach(c => c.draw(ctx));
