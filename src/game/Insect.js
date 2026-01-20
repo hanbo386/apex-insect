@@ -978,6 +978,9 @@ export class Insect {
         if (this.form === 'SCORPION') {
             this.updateScorpion(input);
             return;
+        } else if (this.form === 'TARANTULA') {
+            this.updateTarantula(input);
+            return;
         } else if (this.form === 'STICK_INSECT') {
             this.updateStickInsect(input);
             return;
@@ -1679,22 +1682,7 @@ export class Insect {
             // Just ensure visuals are okay or do nothing here
             return;
         } else if (this.form === 'TARANTULA') {
-            // Update Step Group
-            let speed = this.vel.mag();
-            if (speed > 0.2) {
-                this.moveDist += speed;
-                if (this.moveDist > 24 * this.scale) {
-                    this.stepGroup = 1 - this.stepGroup;
-                    this.moveDist = 0;
-                }
-            }
-
-            this.tarantulaLegs.forEach(leg => {
-                leg.updateScale(this.scale);
-                let moving = speed > 0.1;
-                let speedScale = speed / this.scale;
-                leg.update(this.pos, this.angle, moving, speedScale, this.stepGroup, 0);
-            });
+            // Logic moved to updateTarantula
             return;
         } else if (this.form === 'RHINO_BEETLE') {
             // Simple Walk Cycle update
@@ -2363,6 +2351,8 @@ export class Insect {
             this.triggerMantisAttack(prey.pos);
             return true;
         } else if (this.form === 'SCORPION') {
+            // Align to prey
+            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
             this.triggerScorpionAttack(prey.pos);
             return true;
         } else if (this.form === 'STICK_INSECT') {
@@ -2723,8 +2713,8 @@ export class Insect {
         }
     }
 
-    updateTarantula(input) {
-        // --- Scale Handling ---
+    updateTarantula(input = {}, skipIntegration = false) {
+        // ... (Scale handling)
         let effectiveTarget = this.targetScale * this.worldScaleModifier;
         if (Math.abs(this.scale - effectiveTarget) > 0.01) {
             this.scale += (effectiveTarget - this.scale) * 0.05;
@@ -2737,37 +2727,20 @@ export class Insect {
 
         // --- Logic from Simulation Loop ---
         let isAttacking = this.tarantulaAttackTimer > 0;
-
-        // Manual Sprint / Attack Trigger
-        // Manual Sprint / Attack Trigger
-        // Manual Sprint / Attack Trigger - DISABLED by user request. 
-        // Lunge now only triggers on Predation (Eat).
-        /*
-        if (input.attack && !isAttacking) {
-            this.predationState = 'attacking';
-            this.tarantulaAttackTimer = TARANTULA_SETTINGS.attackDuration;
-            // Align lunge to movement if moving
-            if (this.speed > 0.1) {
-                this.angle = Math.atan2(this.vel.y, this.vel.x);
-            }
-            isAttacking = true;
-        }
-        */
-
         let attackFrames = TARANTULA_SETTINGS.attackDuration - this.tarantulaAttackTimer;
 
         let ax = 0, ay = 0;
 
         // Input mapping
-        let keyW = input.up;
-        let keyS = input.down;
-        let keyA = input.left;
-        let keyD = input.right;
+        let keyW = input.up || false;
+        let keyS = input.down || false;
+        let keyA = input.left || false;
+        let keyD = input.right || false;
 
         // Acceleration Logic
         let accel = TARANTULA_SETTINGS.accel * s;
         if (input.shift && this.stamina > 0 && !isAttacking) {
-            accel *= 2.5; // Boost acceleration to overcome friction
+            accel *= 2.5; // Boost acceleration.
         }
 
         if (isAttacking) {
@@ -2847,10 +2820,12 @@ export class Insect {
             this.vel.y = (this.vel.y / this.speed) * currentMaxSpeed;
         }
 
-        this.vel.x *= TARANTULA_SETTINGS.friction;
-        this.vel.y *= TARANTULA_SETTINGS.friction;
-        this.pos.x += this.vel.x;
-        this.pos.y += this.vel.y;
+        if (!skipIntegration) {
+            this.vel.x *= TARANTULA_SETTINGS.friction;
+            this.vel.y *= TARANTULA_SETTINGS.friction;
+            this.pos.x += this.vel.x;
+            this.pos.y += this.vel.y;
+        }
 
         // Rotation
         // In simulation, rotation happens if speed > 0.2
@@ -2956,6 +2931,9 @@ export class Insect {
                     this.onConsumePrey(this.heldPrey.pos);
                     this.heldPrey = null;
                     this.onConsumePrey = null;
+                } else {
+                    // Failsafe: if we have prey but no callback? shouldn't happen.
+                    if (this.heldPrey) this.heldPrey = null;
                 }
             }
         } else if (this.scorpionAttackState === 2) { // STRIKE

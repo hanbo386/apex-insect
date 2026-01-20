@@ -565,12 +565,22 @@ function gameLoop() {
 
                 // 3. WANDER (Default)
                 if (!isFocused) {
-                    c.angle += (Math.random() - 0.5) * 0.2;
-                    let wanderSpeed = 1.5 * (c.scale || 1.0);
-                    c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(wanderSpeed);
+                    // Guard against overriding Attack Lunge Velocity
+                    if (!(c.form === 'TARANTULA' && c.predationState === 'attacking')) {
+                        c.angle += (Math.random() - 0.5) * 0.2;
+                        let wanderSpeed = 1.5 * (c.scale || 1.0);
+                        c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(wanderSpeed);
+                    }
                 }
 
-                c.pos = c.pos.add(c.vel);
+                if (c.form === 'TARANTULA') {
+                    // Tarantula uses advanced physics (friction/lunge) handles its own pos integration
+                    c.updateTarantula({});
+                } else {
+                    // Standard Integration
+                    c.pos = c.pos.add(c.vel);
+                }
+
                 c.speed = c.vel.mag();
 
                 c.thoraxPos = c.pos;
@@ -586,6 +596,7 @@ function gameLoop() {
                     });
                 }
                 if (c.form === 'SCORPION') c.updateScorpion({});
+                // Tarantula update called above
                 if (c.form === 'GIANT_WETA') {
                     if (c.wetaLegs) c.wetaLegs.forEach(leg => leg.update(c.pos, c.angle, c.vel, c.maxSpeed, c.scale));
                     if (c.wetaAntennae) c.wetaAntennae.forEach((ant, i) => {
