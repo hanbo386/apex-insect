@@ -1,10 +1,11 @@
 import { Vec2 } from './Vec2.js';
 import { Leg } from './Leg.js';
-import { CockroachLeg, CockroachAntenna } from './CockroachParts.js';
+
 import { SpiderLeg, SPIDER_CONFIG } from './SpiderParts.js';
 import { MantisLeg } from './MantisParts.js';
 import { CricketLeg } from './CricketParts.js';
 import { StickInsectLeg } from './StickInsectParts.js';
+import { CockroachLeg, CockroachAntenna, CockroachEffect } from './CockroachParts_Fixed.js';
 
 import { RhinoBeetleLeg } from './RhinoBeetleParts.js';
 import { CentipedeLeg } from './CentipedeParts.js';
@@ -177,7 +178,16 @@ export class Insect {
         this.tarantulaAttackTimer = 0;
         this.moveDist = 0;
         this.stepGroup = 0;
+        this.stepGroup = 0;
         this.palps = [{ ang: -0.35, len: 22 }, { ang: 0.35, len: 22 }];
+
+        // --- Cockroach Properties ---
+        this.cockroachLegs = [];
+        this.cockroachAntennae = [];
+        this.cockroachEffects = [];
+        this.wingOpenFactor = 0;
+        this.wasAttacking = false;
+        this.gaitClock = 0;
     }
 
     initLegs() {
@@ -254,6 +264,24 @@ export class Insect {
                 this.tarantulaLegs.push(new TarantulaLeg(-1, i, this.scale));
                 this.tarantulaLegs.push(new TarantulaLeg(1, i, this.scale));
             }
+            this.legs = [];
+        } else if (this.form === 'COCKROACH') {
+            this.cockroachEffects = [];
+            this.cockroachAntennae = [
+                new CockroachAntenna(130, 12, -1, this.scale),
+                new CockroachAntenna(130, 12, 1, this.scale)
+            ];
+
+            this.cockroachLegs = [
+                new CockroachLeg(-1, 0, new Vec2(22, -16), 28, 25, this.scale),
+                new CockroachLeg(1, 0, new Vec2(22, 16), 28, 25, this.scale),
+                new CockroachLeg(-1, 1, new Vec2(5, -22), 40, 30, this.scale),
+                new CockroachLeg(1, 1, new Vec2(5, 22), 40, 30, this.scale),
+                new CockroachLeg(-1, 2, new Vec2(-15, -20), 48, 35, this.scale),
+                new CockroachLeg(1, 2, new Vec2(-15, 20), 48, 35, this.scale)
+            ];
+            // Init feet
+            this.cockroachLegs.forEach(l => l.update(this.pos, this.angle, this.vel));
             this.legs = [];
         } else if (this.form === 'RHINO_BEETLE') {
             this.rhinoLegs = [
@@ -936,6 +964,9 @@ export class Insect {
         } else if (this.form === 'STICK_INSECT') {
             this.updateStickInsect(input);
             return;
+        } else if (this.form === 'COCKROACH') {
+            this.updateCockroach(input);
+            return;
         } else if (this.form === 'TITAN') {
             this.updateTitan(16 / 1000); // Fixed dt or just allow usage
             // Main update doesn't pass dt to updateVisuals, it uses 'input'.
@@ -1584,39 +1615,7 @@ export class Insect {
             }
             return;
         } else if (this.form === 'COCKROACH') {
-            // Update Antennae
-            let headPos = this.pos.add(this.lungeOffset).add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(35 * this.scale));
-            if (this.leftCockroachAntenna) {
-                this.leftCockroachAntenna.updateScale(this.scale);
-                this.leftCockroachAntenna.update(headPos, this.angle, this.vel);
-            }
-            if (this.rightCockroachAntenna) {
-                this.rightCockroachAntenna.updateScale(this.scale);
-                this.rightCockroachAntenna.update(headPos, this.angle, this.vel);
-            }
-
-            // Update Legs
-            let speedMag = this.vel.mag();
-            this.gaitClock += speedMag * 0.15;
-            let groupA_CanStep = Math.sin(this.gaitClock) > 0;
-
-            if (this.cockroachLegs.length === 0) return; // safety
-
-            this.cockroachLegs.forEach((leg, i) => {
-                leg.updateScale(this.scale);
-                // Indices: 0(FL), 1(FR), 2(ML), 3(MR), 4(BL), 5(BR)
-                // Tripod A: 0, 3, 4 (FL, MR, BL)
-                // Tripod B: 1, 2, 5 (FR, ML, BR)
-                let isGroupA = (i === 0 || i === 3 || i === 4);
-                let allowed = (isGroupA && groupA_CanStep) || (!isGroupA && !groupA_CanStep);
-
-                if (speedMag > 0.5) {
-                    if (allowed) leg.update(this.pos, this.angle, this.vel);
-                } else {
-                    leg.update(this.pos, this.angle, this.vel, false);
-                }
-
-            });
+            // Logic moved to updateCockroach
             return;
         } else if (this.form === 'SPIDER') {
             // Logic is now driven by legs calling toggleGait()
@@ -1886,25 +1885,28 @@ export class Insect {
     }
 
     drawCockroach(ctx) {
-        // Draw Legs
+        // Effects (Ground)
+        this.cockroachEffects.filter(e => e.type === 'shockwave').forEach(e => e.draw(ctx));
+
+        // Legs
         this.cockroachLegs.forEach(leg => leg.draw(ctx, this.pos, this.angle));
 
-        // Draw Antennae
-        if (this.leftCockroachAntenna) this.leftCockroachAntenna.draw(ctx);
-        if (this.rightCockroachAntenna) this.rightCockroachAntenna.draw(ctx);
+        // Antennae
+        this.cockroachAntennae.forEach(ant => ant.draw(ctx));
 
+        // Body & Wings
         ctx.save();
-        ctx.translate(this.pos.x + this.lungeOffset.x, this.pos.y + this.lungeOffset.y);
+        ctx.translate(this.pos.x, this.pos.y);
         ctx.rotate(this.angle);
 
-        // Shadow (Wider)
+        // Shadow
         ctx.fillStyle = "rgba(0,0,0,0.3)";
         ctx.beginPath();
-        // Width 42 * scale, Height 26 * scale
-        ctx.ellipse(0, 0, 42 * this.scale, 26 * this.scale, 0, 0, Math.PI * 2);
+        let shadowScale = this.scale * (1 + this.wingOpenFactor * 0.2);
+        ctx.ellipse(0, 0, 42 * shadowScale, 26 * shadowScale, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // 1. Abdomen (Body) - Wider and Larger
+        // 1. Abdomen
         let abdomenGradient = ctx.createRadialGradient(-10 * this.scale, -5 * this.scale, 0, 0, 0, 55 * this.scale);
         abdomenGradient.addColorStop(0, "#3E2723");
         abdomenGradient.addColorStop(0.6, "#1a0f0a");
@@ -1912,77 +1914,152 @@ export class Insect {
 
         ctx.fillStyle = abdomenGradient;
         ctx.beginPath();
-        // 修正：从 (20,0) 开始，加宽控制点 Y 到 +/- 28 (原18)，延伸尾部到 -70 (原-50)
-        let s = this.scale;
-        ctx.moveTo(25 * s, 0);
-        ctx.bezierCurveTo(25 * s, 28 * s, -55 * s, 25 * s, -70 * s, 0);
-        ctx.bezierCurveTo(-55 * s, -25 * s, 25 * s, -28 * s, 25 * s, 0);
+        ctx.moveTo(25 * this.scale, 0);
+        ctx.bezierCurveTo(25 * this.scale, 28 * this.scale, -55 * this.scale, 25 * this.scale, -70 * this.scale, 0);
+        ctx.bezierCurveTo(-55 * this.scale, -25 * this.scale, 25 * this.scale, -28 * this.scale, 25 * this.scale, 0);
         ctx.fill();
 
-        // Segment lines
+        // Abdomen segments
         ctx.strokeStyle = "rgba(0,0,0,0.4)";
-        ctx.lineWidth = 1 * s;
+        ctx.lineWidth = 1 * this.scale;
         for (let i = -50; i < 10; i += 12) {
+            let x = i * this.scale;
             ctx.beginPath();
-            ctx.moveTo(i * s, -18 * s);
-            ctx.quadraticCurveTo((i - 8) * s, 0, i * s, 18 * s);
+            ctx.moveTo(x, -18 * this.scale);
+            ctx.quadraticCurveTo(x - 8 * this.scale, 0, x, 18 * this.scale);
             ctx.stroke();
         }
 
-        // 2. Wings (Folded)
-        ctx.fillStyle = "rgba(160, 82, 45, 0.7)";
+        // --- WING DRAWING ---
+        let wingRot = this.wingOpenFactor * 1.4;
+
+        // A. INNER WINGS
+        if (this.wingOpenFactor > 0.1) {
+            ctx.save();
+            let vibrate = Math.sin(Date.now() * 0.1) * 0.1; // Not dependent on time, but ok for visual
+            ctx.scale(1 + vibrate, 1);
+
+            ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+
+            // Left Inner
+            ctx.save();
+            ctx.rotate(-wingRot * 1.05);
+            ctx.beginPath();
+            ctx.moveTo(20 * this.scale, 0);
+            ctx.quadraticCurveTo(10 * this.scale, -35 * this.scale, -80 * this.scale, -15 * this.scale);
+            ctx.lineTo(-20 * this.scale, 0);
+            ctx.fill();
+            ctx.restore();
+
+            // Right Inner
+            ctx.save();
+            ctx.rotate(wingRot * 1.05);
+            ctx.beginPath();
+            ctx.moveTo(20 * this.scale, 0);
+            ctx.quadraticCurveTo(10 * this.scale, 35 * this.scale, -80 * this.scale, 15 * this.scale);
+            ctx.lineTo(-20 * this.scale, 0);
+            ctx.fill();
+            ctx.restore();
+
+            ctx.restore();
+        }
+
+        // B. RIGHT ELYTRA
+        ctx.save();
+        ctx.translate(20 * this.scale, 10 * this.scale);
+        ctx.rotate(wingRot);
+        ctx.translate(-20 * this.scale, -10 * this.scale);
+
+        ctx.fillStyle = "rgba(160, 82, 45, 0.85)";
         ctx.beginPath();
-        ctx.moveTo(28 * s, 0);
-        ctx.quadraticCurveTo(25 * s, 26 * s, -75 * s, 10 * s);
-        ctx.lineTo(-75 * s, -10 * s);
-        ctx.quadraticCurveTo(25 * s, -26 * s, 28 * s, 0);
+        ctx.moveTo(28 * this.scale, 0);
+        ctx.quadraticCurveTo(25 * this.scale, 26 * this.scale, -75 * this.scale, 10 * this.scale);
+        ctx.lineTo(-75 * this.scale, 0);
+        ctx.lineTo(28 * this.scale, 0);
         ctx.fill();
 
         ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
         ctx.beginPath();
-        ctx.ellipse(-15 * s, 8 * s, 25 * s, 8 * s, -0.2, 0, Math.PI * 2);
+        ctx.ellipse(-15 * this.scale, 12 * this.scale, 25 * this.scale, 6 * this.scale, 0.1, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.strokeStyle = "rgba(100, 50, 20, 0.3)";
-        ctx.lineWidth = 0.5 * s;
         ctx.beginPath();
-        ctx.moveTo(28 * s, 0);
-        ctx.quadraticCurveTo(0, 15 * s, -70 * s, 8 * s);
+        ctx.moveTo(28 * this.scale, 0);
+        ctx.quadraticCurveTo(0, 15 * this.scale, -70 * this.scale, 8 * this.scale);
         ctx.stroke();
+        ctx.restore();
 
-        // 3. Pronotum (前胸背板)
-        let pronotumGrad = ctx.createRadialGradient(25 * s, -2 * s, 0, 25 * s, 0, 15 * s);
+
+        // C. LEFT ELYTRA
+        ctx.save();
+        ctx.translate(20 * this.scale, -10 * this.scale);
+        ctx.rotate(-wingRot);
+        ctx.translate(-20 * this.scale, 10 * this.scale);
+
+        ctx.fillStyle = "rgba(160, 82, 45, 0.85)";
+        ctx.beginPath();
+        ctx.moveTo(28 * this.scale, 0);
+        ctx.quadraticCurveTo(25 * this.scale, -26 * this.scale, -75 * this.scale, -10 * this.scale);
+        ctx.lineTo(-75 * this.scale, 0);
+        ctx.lineTo(28 * this.scale, 0);
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
+        ctx.beginPath();
+        ctx.ellipse(-15 * this.scale, -12 * this.scale, 25 * this.scale, 6 * this.scale, -0.1, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = "rgba(100, 50, 20, 0.3)";
+        ctx.beginPath();
+        ctx.moveTo(28 * this.scale, 0);
+        ctx.quadraticCurveTo(0, -15 * this.scale, -70 * this.scale, -8 * this.scale);
+        ctx.stroke();
+        ctx.restore();
+
+        // 3. Pronotum
+        let pronotumGrad = ctx.createRadialGradient(25 * this.scale, -2 * this.scale, 0, 25 * this.scale, 0, 15 * this.scale);
         pronotumGrad.addColorStop(0, "#5d4037");
         pronotumGrad.addColorStop(0.5, "#2d1e18");
         pronotumGrad.addColorStop(1, "#0f0500");
 
         ctx.fillStyle = pronotumGrad;
         ctx.beginPath();
-        ctx.ellipse(25 * s, 0, 14 * s, 16 * s, 0, 0, Math.PI * 2);
+        ctx.ellipse(25 * this.scale, 0, 14 * this.scale, 16 * this.scale, 0, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
         ctx.beginPath();
-        ctx.ellipse(25 * s, -5 * s, 6 * s, 4 * s, 0, 0, Math.PI * 2);
+        ctx.ellipse(25 * this.scale, -5 * this.scale, 6 * this.scale, 4 * this.scale, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // 4. Head (Hidden mostly)
+        // 4. Head
         ctx.fillStyle = "#0f0500";
         ctx.beginPath();
-        ctx.ellipse(38 * s, 0, 5 * s, 7 * s, 0, 0, Math.PI * 2);
+        ctx.ellipse(38 * this.scale, 0, 5 * this.scale, 7 * this.scale, 0, 0, Math.PI * 2);
         ctx.fill();
 
         // Cerci
         ctx.strokeStyle = "#2d1e18";
-        ctx.lineWidth = 2 * s;
+        ctx.lineWidth = 2 * this.scale;
         ctx.beginPath();
-        ctx.moveTo(-65 * s, 6 * s);
-        ctx.lineTo(-75 * s, 10 * s);
-        ctx.moveTo(-65 * s, -6 * s);
-        ctx.lineTo(-75 * s, -10 * s);
+        ctx.moveTo(-65 * this.scale, 6 * this.scale);
+        ctx.lineTo(-75 * this.scale, 10 * this.scale);
+        ctx.moveTo(-65 * this.scale, -6 * this.scale);
+        ctx.lineTo(-75 * this.scale, -10 * this.scale);
         ctx.stroke();
 
         ctx.restore();
+
+        // Draw Held Prey visually
+        this.drawHeldPrey(ctx);
+
+        // Aerial Effects
+        this.cockroachEffects.filter(e => e.type === 'line').forEach(e => e.draw(ctx));
+    }
+
+    drawGiantWeta(ctx) {
+        if (drawGiantWeta) drawGiantWeta(ctx, this);
     }
 
     drawSpider(ctx) {
@@ -2055,6 +2132,8 @@ export class Insect {
             return 150 * this.scale;
         } else if (this.form === 'STICK_INSECT') {
             return 80 * this.scale;
+        } else if (this.form === 'COCKROACH') {
+            return 40 * this.scale;
         }
         return 25 * this.scale;
     }
@@ -2109,16 +2188,12 @@ export class Insect {
             this.predationState = 'attacking';
             // Align to prey
             this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
-            // Trigger Leg Attacks (Front Pair)
-            // Assuming legs[0] and legs[1] are front legs
-            if (this.stickLegs && this.stickLegs.length >= 2) {
-                this.stickLegs[0].isAttacking = true;
-                this.stickLegs[0].attackProgress = 0;
-                this.stickLegs[1].isAttacking = true;
-                this.stickLegs[1].attackProgress = 0;
-            }
-            // Initial pullback velocity
-            this.vel = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(-1.5 * this.scale);
+            // ... (Stick Insect logic)
+        } else if (this.form === 'COCKROACH') {
+            this.predationState = 'attacking';
+            // Align to prey
+            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
+            // Burst logic will trigger in updateCockroach because state is now 'attacking'
         } else {
             // Generic Lunge
             this.predationState = 'lunging';
@@ -3345,6 +3420,143 @@ export class Insect {
                 leg.update(this);
             });
         }
+    }
+
+    updateCockroach(input) {
+        const s = this.scale;
+        const isPlayer = input && (input.up !== undefined || input.keys !== undefined || input.mouseDown !== undefined);
+
+        // --- Attack Trigger (Auto or Manual) ---
+        let triggerAttack = false;
+
+        // If preying, we force attack state
+        if (this.heldPrey && this.predationState === 'attacking' && !this.wasAttacking) {
+            triggerAttack = true; // Auto-trigger burst
+        }
+        // Manual override (Space) for 'Deterrence' effect
+        if (isPlayer && input.space && !this.wasAttacking) {
+            triggerAttack = true;
+            this.predationState = 'attacking'; // Set state if manual
+        }
+
+        let isAttacking = (this.predationState === 'attacking');
+
+        // Check completion of effects to reset state if it was a manual/empty attack
+        // Actually, let's use a timer or effect life?
+        // Sim logic: isAttacking = keys.space.
+        // Game logic: one-shot trigger, sustain for a bit?
+        // Let's make it sustain providing visuals.
+
+        if (triggerAttack) {
+            // Spawn Center Shockwave (at head)
+            let forward = new Vec2(Math.cos(this.angle), Math.sin(this.angle));
+            // 修正：从 30 调整为 48，确保位置在头部前端
+            let headPos = this.pos.add(forward.mult(48 * s));
+
+            // 1. Main Shockwave
+            this.cockroachEffects.push(new CockroachEffect(headPos.x, headPos.y, 'shockwave', 0, s));
+
+            // 2. Burst of Speed Lines
+            for (let i = 0; i < 12; i++) {
+                let spawnAngle = this.angle;
+                this.cockroachEffects.push(new CockroachEffect(headPos.x, headPos.y, 'line', spawnAngle, s));
+            }
+
+            // If we have prey, we consume it immediately (AoE style or Instant)
+            // Or wait for effect?
+            // "威慑攻击 (爆发特效)" implies instant hit.
+            if (this.heldPrey && this.onConsumePrey) {
+                this.onConsumePrey(headPos);
+                this.heldPrey = null;
+                // Reset state after burst?
+                setTimeout(() => { if (this.predationState === 'attacking') this.predationState = 'idle'; }, 300);
+            } else {
+                // Manual burst, reset quickly
+                setTimeout(() => { if (this.predationState === 'attacking') this.predationState = 'idle'; }, 300);
+            }
+        }
+
+        this.wasAttacking = isAttacking;
+
+        // Wing Animation Logic
+        if (isAttacking) {
+            this.wingOpenFactor += 0.1;
+        } else {
+            this.wingOpenFactor -= 0.05;
+        }
+        this.wingOpenFactor = Math.max(0, Math.min(1, this.wingOpenFactor));
+
+        // Movement
+        let shouldMove = true; // Cockroach CAN move while attacking (burst doesn't lock)
+
+        if (shouldMove && isPlayer) {
+            let ax = 0, ay = 0;
+            let accel = 0.8 * s; // Fast
+
+            if (input.up) ay -= accel;
+            if (input.down) ay += accel;
+            if (input.left) ax -= accel;
+            if (input.right) ax += accel;
+
+            if (isAttacking) ay -= 0.5 * s; // Burst forward
+
+            this.vel.x += ax; this.vel.y += ay;
+            this.vel = this.vel.mult(0.85); // High friction for snappy movement
+
+            let speed = this.vel.mag();
+            this.speed = speed;
+
+            if (speed > 0.1) {
+                let targetAngle = Math.atan2(this.vel.y, this.vel.x);
+                let diff = targetAngle - this.angle;
+                while (diff <= -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                this.angle += diff * 0.15; // Fast turn
+
+                if (isAttacking) this.angle += (Math.random() - 0.5) * 0.1; // Jitter
+            }
+            this.pos = this.pos.add(this.vel);
+        } else if (!isPlayer) {
+            // NPC
+            this.speed = this.vel.mag();
+            // Angle/Pos handled by AI
+        }
+
+        // Head Pos
+        let forward = new Vec2(Math.cos(this.angle), Math.sin(this.angle));
+        this.headPos = this.pos.add(forward.mult(35 * s));
+
+        // Update Parts
+        this.cockroachAntennae.forEach(ant => {
+            ant.updateScale(s);
+            ant.update(this.headPos, this.angle, this.vel, isAttacking);
+        });
+
+        let speedMag = this.speed;
+        let gaitSpeed = isAttacking ? 0.8 : 0.15;
+        this.gaitClock += speedMag * gaitSpeed; // Normalised speed factor needed? 
+        // Sim uses 'speedMag' directly, where maxSpeed is 8.
+        // Our speedMag is pixels/frame, roughly same range.
+
+        let groupA_CanStep = Math.sin(this.gaitClock) > 0;
+
+        this.cockroachLegs.forEach((leg, i) => {
+            leg.updateScale(s);
+            let isGroupA = (i === 0 || i === 3 || i === 4);
+            let allowed = (isGroupA && groupA_CanStep) || (!isGroupA && !groupA_CanStep);
+
+            if (isAttacking) allowed = true;
+
+            if (speedMag > (0.5 * s)) {
+                if (allowed) leg.update(this.pos, this.angle, this.vel, isAttacking);
+            } else {
+                leg.update(this.pos, this.angle, this.vel, false);
+            }
+        });
+
+        // Effects
+        this.cockroachEffects.forEach(e => e.update());
+        this.cockroachEffects = this.cockroachEffects.filter(e => !e.dead);
     }
 
     updateTitan(dt) {

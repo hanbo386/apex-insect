@@ -609,6 +609,8 @@ function gameLoop() {
                 });
             } else if (c.form === 'STICK_INSECT') {
                 c.updateStickInsect({});
+            } else if (c.form === 'COCKROACH') {
+                c.updateCockroach({});
             }
             // Standard Legs (Scorpion legs list is empty, so this is safe to leave or wrap)
             c.legs.forEach(l => l.update(c.thoraxPos, c.angle, c.vel, true));
