@@ -607,6 +607,8 @@ function gameLoop() {
                     let side = (i === 0) ? -1 : 1;
                     ant.update(c.pos, c.angle, side);
                 });
+            } else if (c.form === 'STICK_INSECT') {
+                c.updateStickInsect({});
             }
             // Standard Legs (Scorpion legs list is empty, so this is safe to leave or wrap)
             c.legs.forEach(l => l.update(c.thoraxPos, c.angle, c.vel, true));

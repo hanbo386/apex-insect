@@ -567,25 +567,6 @@ export class Insect {
             // The `main.js` reset logic modifies `player.scale` etc, but `levelUp` resets it from config.
 
             // Let's use `this.worldScaleModifier` correctly.
-            // If `main.js` sets `this.worldScaleModifier = 1.0 / worldScaleDivisor`, then this code works:
-            // `this.baseScale = (start + ...)`.
-            // `this.scale = this.baseScale * this.worldScaleModifier`.
-
-            // BUT currently `main.js` manages manual division.
-            // Let's patch it here to respect the current "shrink state" if possible, 
-            // OR better, update `main.js` to use `worldScaleModifier` properly.
-            // But I cannot easily edit `main.js` simultaneous with this thought process without multiple steps?
-            // Actually I am in `Insect.js`.
-
-            // Let's assume we want to support the "Manual Division" approach for now.
-            // We need to apply the same reduction that happened to `this.scale`.
-            // But `this.scale` changes.
-
-            // Correct approach: Use `worldScaleModifier`.
-            // I will assume `main.js` will be updated (or I will update it) to set `worldScaleModifier`.
-            // BUT for now, I can check if `this.scale` is drastically smaller than `config.startScale`? No.
-
-            // Let's rely on `this.worldScaleModifier`. 
             // I will Initialize it to 1.0.
             // And in `levelUp`, we do NOT apply it to `baseScale`. `baseScale` is CANONICAL.
             // `baseScale` should be 6.5 -> 10.0.
@@ -951,6 +932,9 @@ export class Insect {
 
         if (this.form === 'SCORPION') {
             this.updateScorpion(input);
+            return;
+        } else if (this.form === 'STICK_INSECT') {
+            this.updateStickInsect(input);
             return;
         } else if (this.form === 'TITAN') {
             this.updateTitan(16 / 1000); // Fixed dt or just allow usage
@@ -1670,35 +1654,10 @@ export class Insect {
                 leg.update(this.pos, this.angle, this.vel, stepThreshold);
             });
             return;
+            return;
         } else if (this.form === 'STICK_INSECT') {
-            // Update Segments
-            if (this.stickSegments.length > 0) {
-                this.stickSegments[0] = this.pos.clone(); // Head follows pos exactly (or slight offset?)
-                // Reference: `this.segments[0] = this.pos;`
-
-                for (let i = 1; i < this.stickSegments.length; i++) {
-                    let prev = this.stickSegments[i - 1];
-                    let curr = this.stickSegments[i];
-                    let dist = prev.dist(curr);
-                    let targetDist = (i <= 4 ? 16 : 20) * this.scale;
-
-                    if (dist > 0) {
-                        let overlap = dist - targetDist;
-                        let dir = curr.sub(prev).normalize(); // Vector from prev to curr? No.
-                        // We want to pull curr towards prev.
-                        // Reference: `curr.sub(dir.mult(overlap * 0.8))` where dir = curr.sub(prev).
-                        // If dist > target, overlap > 0.
-                        // curr is pulled back towards prev.
-                        this.stickSegments[i] = curr.sub(dir.mult(overlap * 0.8));
-                    }
-                }
-            }
-
-            // Update Legs
-            this.stickLegs.forEach(leg => {
-                leg.updateScale(this.scale);
-                leg.update(this);
-            });
+            // Logic moved to updateStickInsect to allow Input Locking
+            // Just ensure visuals are okay or do nothing here
             return;
         } else if (this.form === 'TARANTULA') {
             // Update Step Group
@@ -2087,13 +2046,15 @@ export class Insect {
         if (this.form === 'SPIDER') {
             return SPIDER_CONFIG.legLength * 0.8 * this.scale;
         } else if (this.form === 'MANTIS') {
-            return 120 * this.scale; // Significantly increased Scythe reach to ensure visible grapple
+            return 120 * this.scale;
         } else if (this.form === 'TARANTULA') {
             return 40 * this.scale;
         } else if (this.form === 'CENTIPEDE' || this.form === 'SCORPION') {
             return 60 * this.scale;
         } else if (this.form === 'TITAN') {
             return 150 * this.scale;
+        } else if (this.form === 'STICK_INSECT') {
+            return 80 * this.scale;
         }
         return 25 * this.scale;
     }
@@ -2142,6 +2103,22 @@ export class Insect {
             const armR = this.mantisLegs[5]; // Right
             armL.overrideTarget = this.heldPrey.pos;
             armR.overrideTarget = this.heldPrey.pos;
+            armL.overrideTarget = this.heldPrey.pos;
+            armR.overrideTarget = this.heldPrey.pos;
+        } else if (this.form === 'STICK_INSECT') {
+            this.predationState = 'attacking';
+            // Align to prey
+            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
+            // Trigger Leg Attacks (Front Pair)
+            // Assuming legs[0] and legs[1] are front legs
+            if (this.stickLegs && this.stickLegs.length >= 2) {
+                this.stickLegs[0].isAttacking = true;
+                this.stickLegs[0].attackProgress = 0;
+                this.stickLegs[1].isAttacking = true;
+                this.stickLegs[1].attackProgress = 0;
+            }
+            // Initial pullback velocity
+            this.vel = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(-1.5 * this.scale);
         } else {
             // Generic Lunge
             this.predationState = 'lunging';
@@ -2410,6 +2387,9 @@ export class Insect {
 
 
     drawStickInsect(ctx) {
+        // Draw Held Prey (Visual Eating)
+        this.drawHeldPrey(ctx);
+
         // 1. Legs (Bottom)
         this.stickLegs.forEach(leg => leg.draw(ctx, this));
 
@@ -3242,6 +3222,131 @@ export class Insect {
     }
 
     // --- Titan Methods (Exact logic from Reference) ---
+    updateStickInsect(input) {
+        const s = this.scale;
+
+        // Detect NPC: input is usually an empty object or persistent object for players.
+        // For NPC calls from main.js: updateStickInsect({}) -> input has no keys.
+        // For Player: input has keys like 'up', 'down', etc.
+        const isPlayer = input && (input.up !== undefined || input.keys !== undefined || input.mouseDown !== undefined);
+
+        // --- Movement & Attack Logic ---
+        let shouldMove = true;
+
+        if (this.predationState === 'attacking') {
+            shouldMove = false; // Lock Input / Movement
+
+            // Check Attack Progress (Driven by legs)
+            let leg = this.stickLegs[0];
+            if (leg && leg.isAttacking) {
+                let prog = leg.attackProgress;
+
+                // Velocity Surge (Thrust)
+                // In snippet: around 0.4 progress, velocity becomes 12.
+                if (prog > 0.4 && prog < 0.52) {
+                    let surgeSpeed = 12 * s;
+                    this.vel = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(surgeSpeed);
+                }
+
+                // Eat Event / Impact at ~0.5
+                // Trigger callback and destroy prey visual
+                if (prog >= 0.5 && this.heldPrey) {
+                    if (this.onConsumePrey) {
+                        // Impact position ~150px in front
+                        let hitPos = this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(150 * s));
+                        this.onConsumePrey(hitPos);
+                        this.onConsumePrey = null;
+
+                        // Shake effect? (simulated by random offsets in draw, handled via this.shake = 8?)
+                        // this.shake = 8; // If we implemented shake in Insect generic props
+                    }
+                    this.heldPrey = null;
+                }
+
+                // End Attack
+                if (prog >= 1) {
+                    this.predationState = 'idle';
+                }
+            } else {
+                // Failsafe
+                this.predationState = 'idle';
+            }
+        }
+
+        // Standard Movement (if not locked)
+        if (shouldMove && isPlayer) {
+            // Reuse generic acceleration or simple directional?
+
+            let ax = 0, ay = 0;
+            let accel = 0.5 * s;
+            if (input.shift && this.stamina > 0) { accel *= 2.0; this.stamina -= 0.5; }
+            else if (this.stamina < this.maxStamina) this.stamina += 0.5;
+
+            if (input.up) ay -= accel;
+            if (input.down) ay += accel;
+            if (input.left) ax -= accel;
+            if (input.right) ax += accel;
+
+            this.vel.x += ax; this.vel.y += ay;
+
+            // Friction
+            this.vel = this.vel.mult(0.9);
+
+            // Angle follows velocity for Stick Insect (it turns to move)
+            let speed = this.vel.mag();
+            this.speed = speed;
+            if (speed > 0.1) {
+                let targetAngle = Math.atan2(this.vel.y, this.vel.x);
+                // Smooth turn
+                let diff = targetAngle - this.angle;
+                while (diff <= -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                this.angle += diff * 0.1;
+            }
+            this.pos = this.pos.add(this.vel); // Apply position update for player
+        } else if (shouldMove && !isPlayer) {
+            // NPC Logic: Velocity already set by main.js AI.
+            // Just ensure 'speed' prop is up to date for animation
+            this.speed = this.vel.mag();
+            // No friction application here, main.js handles movement.
+            // Position update for NPC is handled by main.js AI.
+        } else { // !shouldMove (i.e., attacking)
+            // Still apply friction/physics if locked (so surge decays)
+            this.vel = this.vel.mult(0.9);
+            this.speed = this.vel.mag();
+            // If player, apply position update for attack lunge/recoil
+            if (isPlayer) this.pos = this.pos.add(this.vel);
+            // If NPC, main.js AI should handle position during attack, or it remains stationary.
+        }
+
+        // Update Segments (Physics Trail)
+        if (this.stickSegments && this.stickSegments.length > 0) {
+            this.stickSegments[0] = this.pos.clone();
+            for (let i = 1; i < this.stickSegments.length; i++) {
+                let prev = this.stickSegments[i - 1];
+                let curr = this.stickSegments[i];
+                let dist = prev.dist(curr);
+                let targetDist = (i <= 4 ? 16 : 20) * s;
+                if (dist > 0) {
+                    let overlap = dist - targetDist;
+                    let dir = curr.sub(prev).normalize();
+                    this.stickSegments[i] = curr.sub(dir.mult(overlap * 0.8));
+                }
+            }
+        }
+
+        // Head Pos Update (for Eating Range calculation)
+        this.headPos = this.pos.clone();
+
+        // Update Legs
+        if (this.stickLegs) {
+            this.stickLegs.forEach(leg => {
+                leg.updateScale(s);
+                leg.update(this);
+            });
+        }
+    }
+
     updateTitan(dt) {
         this.titanTime += dt;
 
