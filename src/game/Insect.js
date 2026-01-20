@@ -9,7 +9,7 @@ import { CockroachLeg, CockroachAntenna, CockroachEffect } from './CockroachPart
 
 import { RhinoBeetleLeg } from './RhinoBeetleParts.js';
 import { CentipedeLeg } from './CentipedeParts.js';
-import { ScorpionLeg, ScorpionClaw } from './ScorpionParts.js';
+import { ScorpionLeg, ScorpionClaw, ScorpionEffect } from './ScorpionParts.js';
 import { TitanLeg, TitanUtils } from './TitanParts.js';
 import { WetaLeg, WetaAntenna, drawGiantWeta } from './WetaParts.js';
 import { TarantulaLeg, AttackEffect, WebProjectile, TARANTULA_SETTINGS } from './TarantulaParts.js';
@@ -166,7 +166,7 @@ export class Insect {
         this.scorpionSegments = [];
         this.scorpionStingProgress = 0;
         this.scorpionStingTarget = 0;
-        this.scorpionAttackState = 0;
+        this.scorpionAttackState = 'none';
         this.scorpionAttackTimer = 0;
         this.scorpionEffects = [];
 
@@ -878,8 +878,9 @@ export class Insect {
         // --- Update Predation Logic (Spider / Mantis) ---
         this.updatePredation();
 
-        // Immobilize if eating (Spider / Mantis Grapple)
-        if ((this.form === 'SPIDER' || this.form === 'MANTIS') && this.predationState !== 'idle') {
+        // Immobilize if eating (Spider / Mantis Grapple / Scorpion Strike)
+        if (((this.form === 'SPIDER' || this.form === 'MANTIS') && this.predationState !== 'idle') ||
+            (this.form === 'SCORPION' && this.scorpionAttackState !== 'none')) {
             input = { up: false, down: false, left: false, right: false, shift: false };
         }
 
@@ -2351,10 +2352,10 @@ export class Insect {
             this.triggerMantisAttack(prey.pos);
             return true;
         } else if (this.form === 'SCORPION') {
-            // Align to prey
-            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
-            this.triggerScorpionAttack(prey.pos);
-            return true;
+            // No custom logic -> Generic Lunge
+            this.predationState = 'lunging';
+            this.lungeTimer = 10;
+
         } else if (this.form === 'STICK_INSECT') {
             this.predationState = 'attacking';
             // Align to prey
@@ -2402,17 +2403,8 @@ export class Insect {
                 this.heldPrey.angle = this.angle + Math.PI / 2; // Orient prey crosswise
             }
             return;
-        } else if (this.predationState === 'attacking' && this.form === 'SCORPION') {
-            if (this.heldPrey) {
-                const s = this.scale;
-                const holdDist = 80 * s;
-                const targetPos = this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(holdDist));
-                this.heldPrey.pos.x += (targetPos.x - this.heldPrey.pos.x) * 0.2;
-                this.heldPrey.pos.y += (targetPos.y - this.heldPrey.pos.y) * 0.2;
-                this.heldPrey.angle = this.angle + Math.PI / 2;
-            }
-            return;
         }
+
 
         // --- Generic Lunge ---
         if (this.predationState === 'lunging') {
@@ -2884,88 +2876,116 @@ export class Insect {
         this.tarantulaLegs.forEach(l => l.update(this.pos, this.angle, moving, this.speed / s, this.stepGroup, this.tarantulaAttackTimer));
     }
 
-    triggerScorpionAttack(target = null) {
-        if (this.scorpionAttackState === 0) {
-            this.scorpionAttackState = 1; // CHARGE / WINDUP
-            this.scorpionAttackTimer = 15;
-            this.predationState = 'attacking';
-        }
-    }
+
 
     updateScorpion(input) {
         const s = this.scale;
 
-        // --- State Machine ---
+        // --- Attack State Machine ---
         let speedMult = 1.0;
         let stingTarget = 0;
 
-        if (this.scorpionAttackState === 1) { // WINDUP
-            speedMult = 0.5;
-            stingTarget = 0.2;
+        // Auto-trigger if 'mouse 0' or 'space' is pressed? User said Left Mouse Button.
+        // Assuming input has mouseDown or similar.
+        // Also support 'predation' triggered by collision (triggerPredation).
 
-            // Backup
+        if (input && input.mouseDown && this.scorpionAttackState === 'none') {
+            this.triggerScorpionAttack();
+        }
+
+        if (this.scorpionAttackState === 'windup') {
+            speedMult = 0.5;
+            stingTarget = 0.2; // 尾巴稍微抬起
             const backDir = new Vec2(Math.cos(this.angle + Math.PI), Math.sin(this.angle + Math.PI));
+            // Backpedal slightly? Or just slow? 
+            // In Sim: this.velocity = this.velocity.add(backDir.mult(0.2));
+            // In Game: Velocity is controlled by Update loop. We can push it.
             this.vel = this.vel.add(backDir.mult(0.2 * s));
 
             this.scorpionAttackTimer--;
             if (this.scorpionAttackTimer <= 0) {
-                this.scorpionAttackState = 2; // STRIKE
+                this.scorpionAttackState = 'strike';
                 this.scorpionAttackTimer = 8;
 
-                // Lunge
+                // Strike Forward
                 const fwdDir = new Vec2(Math.cos(this.angle), Math.sin(this.angle));
                 this.vel = fwdDir.mult(15 * s);
 
-                // Effects
-                const head = this.scorpionSegments[0];
-                if (head) {
-                    const impactPos = head.pos.add(fwdDir.mult(50 * s));
-                    this.scorpionEffects.push({
-                        type: 'shockwave', x: impactPos.x, y: impactPos.y,
-                        radius: 5 * s, maxRadius: 50 * s, life: 1.0, color: '220, 20, 20'
-                    });
-                }
+                // Screen Shake (Sim: 10)
+                // this.game.shake = 10; // If game has shake
 
-                // Eat Logic
-                if (this.heldPrey && this.onConsumePrey) {
-                    this.onConsumePrey(this.heldPrey.pos);
-                    this.heldPrey = null;
-                    this.onConsumePrey = null;
-                } else {
-                    // Failsafe: if we have prey but no callback? shouldn't happen.
-                    if (this.heldPrey) this.heldPrey = null;
+                // --- Spawn Effects ---
+                if (this.scorpionSegments.length > 0) {
+                    const head = this.scorpionSegments[0];
+                    const impactPos = head.pos.add(fwdDir.mult(50 * s));
+                    this.scorpionEffects.push(new ScorpionEffect(impactPos.x, impactPos.y, s));
+
+                    // Claws Effects
+                    if (this.scorpionClaws) {
+                        const rightDir = new Vec2(Math.cos(this.angle + Math.PI / 2), Math.sin(this.angle + Math.PI / 2));
+                        this.scorpionClaws.forEach(claw => {
+                            const clawImpact = this.pos
+                                .add(fwdDir.mult(145 * s))
+                                .add(rightDir.mult(claw.side * 25 * s));
+
+                            const wave = new ScorpionEffect(clawImpact.x, clawImpact.y, s);
+                            wave.maxRadius = 30 * s;
+                            this.scorpionEffects.push(wave);
+                        });
+                    }
+
+                    // --- Perform Consumption of Prey in Range ---
+                    // Only if we actually triggered this via predation intent? Or always area damage?
+                    // User said "Charge Attack is Predation Action". So yes, eat things here.
+                    if (this.onConsumePrey) {
+                        // Eat at impactPos
+                        this.onConsumePrey(impactPos);
+                        // If loop to eat multiple? this.onConsumePrey might be single target.
+                    }
                 }
             }
-        } else if (this.scorpionAttackState === 2) { // STRIKE
-            stingTarget = 1.0;
+        }
+        else if (this.scorpionAttackState === 'strike') {
+            stingTarget = 1.0; // 刺下去
             speedMult = 0;
             this.scorpionAttackTimer--;
             if (this.scorpionAttackTimer <= 0) {
-                this.scorpionAttackState = 3; // RECOVER
+                this.scorpionAttackState = 'recover';
                 this.scorpionAttackTimer = 20;
             }
-        } else if (this.scorpionAttackState === 3) { // RECOVER
+        }
+        else if (this.scorpionAttackState === 'recover') {
             speedMult = 0.3;
-            stingTarget = 0.0;
+            stingTarget = 0.0; // 目标变为初始状态
             this.scorpionAttackTimer--;
             if (this.scorpionAttackTimer <= 0) {
-                this.scorpionAttackState = 0;
-                this.predationState = 'idle';
+                this.scorpionAttackState = 'none';
+                this.heldPrey = null;
+                this.onConsumePrey = null;
             }
         }
 
-        // --- Segments Body IK (Tail) ---
-        if (this.scorpionSegments.length > 0) {
-            this.scorpionSegments[0].pos = this.pos.clone();
-            this.scorpionSegments[0].angle = this.angle;
-        }
+        // --- Update Effects ---
+        this.scorpionEffects.forEach(e => e.update());
+        this.scorpionEffects = this.scorpionEffects.filter(e => e.active);
 
-        // Sting Animation
+        // --- Segments Body IK (Tail) ---
+        // Ensure segments exist
+        if (this.scorpionSegments.length === 0) return;
+
+        this.scorpionSegments[0].pos = this.pos.clone();
+        this.scorpionSegments[0].angle = this.angle;
+        // Fix: Update headPos for collision detection
+        this.headPos = this.scorpionSegments[0].pos.clone();
+        this.thoraxPos = this.pos.clone();
+
+        // Tail Animation Smooth
         let stingSmooth = 0.1;
-        if (this.scorpionAttackState === 2) stingSmooth = 0.6;
-        else if (this.scorpionAttackState === 3) stingSmooth = 0.2;
+        if (this.scorpionAttackState === 'strike') stingSmooth = 0.6;
+        else if (this.scorpionAttackState === 'recover') stingSmooth = 0.2;
 
         this.scorpionStingProgress += (stingTarget - this.scorpionStingProgress) * stingSmooth;
+
 
         for (let i = 1; i < this.scorpionSegments.length; i++) {
             const seg = this.scorpionSegments[i];
@@ -2978,32 +2998,69 @@ export class Insect {
                 const hips = this.scorpionSegments[8] || prev;
                 const lowerBody = this.scorpionSegments[7] || this.scorpionSegments[6] || hips;
 
+                // Hips Back Dir
                 let hipsBackDir = hips.pos.sub(lowerBody.pos).normalize();
-                if (hipsBackDir.mag() === 0) hipsBackDir = new Vec2(Math.cos(hips.angle + Math.PI / 2), Math.sin(hips.angle + Math.PI / 2));
+                if (hipsBackDir.mag() === 0) hipsBackDir = new Vec2(Math.cos(hips.angle + Math.PI / 2), Math.sin(hips.angle + Math.PI / 2)); // Fallback
 
+                // Rest Pose
                 const distBack = (15 + tailIndex * 12) * s;
                 const time = Date.now() / 1000;
                 const sway = Math.sin(time + tailIndex * 0.5) * 2 * s;
 
+                // Right Dir (Perp to Back)
+                // If Back is (x, y), Right is (-y, x)? 
+                // Wait. Sim: rightDir = new Vector(-hipsBackDir.y, hipsBackDir.x).
                 const rightDir = new Vec2(-hipsBackDir.y, hipsBackDir.x);
 
                 let restTarget = hips.pos.add(hipsBackDir.mult(distBack)).add(rightDir.mult(sway));
 
-                // Attack Pose
+                // Attack Target (Over Head)
                 const head = this.scorpionSegments[0];
+                // Head Fwd is (cos(angle), sin(angle)).
+                // Attack Dir is Fwd? Sim: Vector.fromAngle(head.angle - Math.PI/2).
+                // My Head Angle = Velocity Angle.
+                // Sim Head Angle = Velocity Angle + PI/2? No.
+                // Sim: 0 is Up. -PI/2 is Left.
+                // Sim: attackDir = head.angle - PI/2.
+                // In my engine, Head Fwd IS (cos, sin) if moving.
+                // But let's assume `head.angle` matches standard movement.
+                // If moving Right (0 rad), attack should be forward (0 rad).
+                // Sim: "fromAngle(head.angle - Math.PI/2)". Sim 0 = Up. -PI/2 = Right.
+                // So Sim AttackDir = Forward.
                 const attackDir = new Vec2(Math.cos(head.angle), Math.sin(head.angle));
                 const attackDist = (30 + tailIndex * 12) * s;
                 const attackTarget = head.pos.add(attackDir.mult(attackDist));
 
-                // Blend
+                // Mixed Target
+                // let targetPos = restTarget * (1-p) + attackTarget * p
+                let p = this.scorpionStingProgress;
                 let targetPos = new Vec2(
-                    restTarget.x * (1 - this.scorpionStingProgress) + attackTarget.x * this.scorpionStingProgress,
-                    restTarget.y * (1 - this.scorpionStingProgress) + attackTarget.y * this.scorpionStingProgress
+                    restTarget.x * (1 - p) + attackTarget.x * p,
+                    restTarget.y * (1 - p) + attackTarget.y * p
                 );
 
-                const muscleStiffness = 0.5;
+                // Arching
+                const archFactor = Math.sin(p * Math.PI);
+                // Body Up Dir?
+                // Seg 5 is mid body.
+                const seg5 = this.scorpionSegments[5] || head;
+                // Up dir in 2D top down? 'Up' implies Z, but here it's Y offset visually? 
+                // Sim: "bodyUpDir = Vector.fromAngle(seg5.angle)". 
+                // Wait, Sim uses Side View? No, Top Down.
+                // Providing Y offset in top down implies 'Height' which isn't 2D. 
+                // Ah, Sim logic: "archAmount". Maybe it pushes 'forward' or 'back'?
+                // Sim Code: `targetPos = targetPos.add(bodyUpDir.mult(archAmount))`
+                // If `bodyUpDir` is forward vector of body, it pushes tail away/forward.
+                const bodyUpDir = new Vec2(Math.cos(seg5.angle), Math.sin(seg5.angle));
+                const archAmount = 60 * s * archFactor;
+
+                targetPos = targetPos.add(bodyUpDir.mult(archAmount));
+
+                // Muscle Force
+                const muscleStiffness = 0.2;
                 seg.pos = seg.pos.add(targetPos.sub(seg.pos).mult(muscleStiffness));
 
+                // Constraint
                 let constraintVec = seg.pos.sub(prev.pos);
                 if (constraintVec.mag() === 0) constraintVec = hipsBackDir.clone();
                 constraintVec = constraintVec.normalize().mult(spacing);
@@ -3023,12 +3080,24 @@ export class Insect {
         // Update Legs & Claws
         if (this.scorpionLegs) this.scorpionLegs.forEach(leg => {
             leg.updateScale(s);
-            leg.update(this.pos, this.angle, this.vel, this.scorpionAttackState > 0);
+            // Pass attack state to leg? Sim legs react to attack speed.
+            // Sim: leg.update(..., isAttacking).
+            // My ScorpionLeg.update: (pos, angle, vel, isAttacking).
+            leg.update(this.pos, this.angle, this.vel, this.scorpionAttackState !== 'none');
         });
         if (this.scorpionClaws) this.scorpionClaws.forEach(claw => {
             claw.updateScale(s);
+            // Update Claw with State
             claw.update(this.pos, this.angle, this.vel, this.scorpionAttackState);
         });
+    }
+
+    triggerScorpionAttack() {
+        if (this.scorpionAttackState === 'none') {
+            this.scorpionAttackState = 'windup';
+            this.scorpionAttackTimer = 15;
+            // Optionally clear prey?
+        }
     }
 
     drawTarantula(ctx) {
@@ -3409,88 +3478,186 @@ export class Insect {
         this.drawHeldPrey(ctx);
     }
 
-    updateScorpion(input) {
-        // 1. Inputs & State
-        let isAttacking = false;
-        if (input && input.mouseDown) isAttacking = true;
-        if (this.predationState === 'reaching' || this.predationState === 'attacking') isAttacking = true;
 
-        this.scorpionStingTarget = isAttacking ? 1 : (this.scorpionIdleCurl || 0);
-        this.scorpionStingProgress += (this.scorpionStingTarget - this.scorpionStingProgress) * 0.1;
 
-        // 2. Segments IK
-        if (this.scorpionSegments.length > 0) {
-            // Head (0) follows Body (Insect Pos)
-            let head = this.scorpionSegments[0];
-            head.pos = this.pos.clone();
-            head.angle = this.angle;
-
-            // Rest follow chain
-            for (let i = 1; i < this.scorpionSegments.length; i++) {
-                const seg = this.scorpionSegments[i];
-                const prev = this.scorpionSegments[i - 1];
-                const spacing = (seg.type === 'tail' ? 12 : 6) * this.scale;
-
-                // [Reference] Tail Logic
-                if (seg.type === 'tail') {
-                    const tailIndex = i - 10;
-
-                    // Constraint
-                    let constraintVec = seg.pos.sub(prev.pos);
-                    if (constraintVec.mag() > spacing) {
-                        constraintVec = constraintVec.normalize().mult(spacing);
-                        seg.pos = prev.pos.add(constraintVec);
-                    }
-
-                    // Angle points to prev (Trailing)
-                    let angleToPrev = Math.atan2(prev.pos.y - seg.pos.y, prev.pos.x - seg.pos.x);
-                    seg.angle = angleToPrev + Math.PI / 2;
-
-                    // Attack Lerp
-                    if (this.scorpionStingProgress > 0.01) {
-                        // Attack Base: Segment 2 (Body start)
-                        const attackBase = this.scorpionSegments[2].pos;
-
-                        // Attack Dir: Forward relative to Head (Seg 0)
-                        // My Angle 0 is Right. Forward is (cos, sin).
-                        let attackDir = new Vec2(Math.cos(this.scorpionSegments[0].angle), Math.sin(this.scorpionSegments[0].angle));
-
-                        const fwdOffset = 15 * this.scale;
-                        const t = tailIndex / 5; // 0 to 1
-
-                        // Target Point
-                        // Ref: attackBase.add(attackDir.mult(fwdOffset * t)).add(attackDir.mult(-10));
-                        let attackPoint = attackBase
-                            .add(attackDir.mult(fwdOffset * t))
-                            .add(attackDir.mult(-10 * this.scale));
-
-                        const lerp = this.scorpionStingProgress * (0.5 + t * 0.5);
-                        seg.pos.x = seg.pos.x * (1 - lerp) + attackPoint.x * lerp;
-                        seg.pos.y = seg.pos.y * (1 - lerp) + attackPoint.y * lerp;
-                    }
-                } else {
-                    // Body/Head Constraint
-                    let dir = seg.pos.sub(prev.pos);
-                    if (dir.mag() === 0) dir = new Vec2(0, 1);
-                    dir = dir.normalize().mult(spacing);
-                    seg.pos = prev.pos.add(dir);
-                    // Ref: angle = atan2(-dir.y, -dir.x) - PI/2
-                    seg.angle = Math.atan2(-dir.y, -dir.x) - Math.PI / 2;
-                }
-            }
+    startPredation(prey, consumeCallback) {
+        // Allow Tarantula to eat during its attack lunge
+        if (this.form === 'TARANTULA' && this.predationState === 'attacking') {
+            if (consumeCallback) consumeCallback(prey.pos);
+            return true;
         }
 
-        // 3. Update Legs & Claws
-        // Ref Legs: update(pos, angle, velocity)
-        this.scorpionLegs.forEach(leg => leg.update(this.pos, this.angle, this.vel));
+        // Allow Scorpion to eat during its charge attack
+        if (this.form === 'SCORPION' && this.scorpionAttackState !== 'none') {
+            if (consumeCallback) consumeCallback(prey.pos);
+            return true;
+        }
 
-        // Ref Claws: update(pos, angle, velocity, isAttacking). 
-        // My Class Signature: update(pos, angle, velocity, isAttacking).
-        this.scorpionClaws.forEach(claw => claw.update(this.pos, this.angle, this.vel, (this.scorpionStingTarget > 0.5)));
+        if (this.predationState !== 'idle') return false; // Busy
 
-        // Fix: Update headPos for Collision Detection from Seg 0
-        if (this.scorpionSegments.length > 0) {
-            this.headPos = this.scorpionSegments[0].pos.clone(); // Use Head segment
+        this.heldPrey = {
+            pos: prey.pos.clone(),
+            angle: prey.angle,
+            scale: prey.scale || 1.0,
+            color: prey.color || prey.colors?.thorax || '#444',
+            form: prey.form || 'ANT',
+            colors: prey.colors,
+            size: (prey.size || 5) * (prey.scale || 1)
+        };
+        this.onConsumePrey = consumeCallback;
+        this.predationTimer = 0;
+
+        if (this.form === 'TARANTULA') {
+            this.predationState = 'attacking';
+            this.tarantulaAttackTimer = TARANTULA_SETTINGS.attackDuration;
+            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
+            // Don't consume yet, wait for lunge apex in updateTarantula
+            return true;
+        }
+
+        // Note: Removed forced 'attacking' state here.
+        // Normal contact will now fall through to generic 'lunging' below.
+        if (this.form === 'SPIDER' && this.spiderLegs.length >= 2) {
+            this.predationState = 'reaching';
+            // Front legs reach out
+            const frontLeft = this.spiderLegs[0];
+            const frontRight = this.spiderLegs[1];
+            frontLeft.overrideTarget = this.heldPrey.pos;
+            frontRight.overrideTarget = this.heldPrey.pos;
+        } else if (this.form === 'MANTIS' && this.mantisLegs) {
+            this.triggerMantisAttack(prey.pos);
+            return true;
+        } else if (this.form === 'SCORPION') {
+            // Trigger Charge Attack
+            this.triggerScorpionAttack();
+            // Don't set generic 'lunging', let the customized attack state handle it.
+            // We store onConsumePrey, which triggerScorpionAttack/updateScorpion will use.
+            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
+            return true;
+
+        } else if (this.form === 'STICK_INSECT') {
+            this.predationState = 'attacking';
+            // Align to prey
+            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
+            // Trigger Front Legs Attack
+            if (this.stickLegs) {
+                this.stickLegs.forEach(leg => {
+                    if (leg.offsetIndex === 0) {
+                        leg.isAttacking = true;
+                        leg.attackProgress = 0;
+                    }
+                });
+            }
+        } else if (this.form === 'COCKROACH') {
+            this.predationState = 'attacking';
+            // Align to prey
+            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
+            this.wasAttacking = false; // Ensure trigger fires in updateCockroach
+        } else {
+            // Generic Lunge
+            this.predationState = 'lunging';
+            this.lungeTimer = 10;
+        }
+
+        return true;
+    }
+
+    updatePredation() {
+        if (this.predationState === 'idle') return;
+
+        // --- Mantis Grapple ---
+        if (this.predationState === 'attacking' && this.form === 'MANTIS') {
+            if (this.heldPrey) {
+                const s = this.scale;
+                const lungeDist = this.mantisLunge;
+                // Visual sweet spot for "in claws"
+                const baseReach = 60 * s;
+                const totalReach = lungeDist + baseReach;
+
+                const targetPos = this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(totalReach));
+
+                // Snap/Lerp prey to claws
+                this.heldPrey.pos.x += (targetPos.x - this.heldPrey.pos.x) * 0.4;
+                this.heldPrey.pos.y += (targetPos.y - this.heldPrey.pos.y) * 0.4;
+                this.heldPrey.angle = this.angle + Math.PI / 2; // Orient prey crosswise
+            }
+            return;
+        }
+
+
+        // --- Generic Lunge ---
+        if (this.predationState === 'lunging') {
+            this.lungeTimer--;
+
+            // Apex at timer = 5 (Starts at 10)
+            let progress = 0;
+            if (this.lungeTimer >= 5) {
+                // Outward: 10 -> 5 maps to 0 -> 1
+                progress = (10 - this.lungeTimer) / 5;
+            } else {
+                // Inward: 5 -> 0 maps to 1 -> 0
+                progress = this.lungeTimer / 5;
+            }
+
+            // Calc Offset (Forward vector * scale * amount)
+            let lungeDist = 15 * this.scale;
+            this.lungeOffset = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(lungeDist * progress);
+
+            // Trigger Eat at Apex
+            if (this.lungeTimer === 5) {
+                if (this.onConsumePrey) {
+                    this.onConsumePrey(this.headPos.clone().add(this.lungeOffset));
+                    this.onConsumePrey = null; // Done
+                }
+            }
+
+            if (this.lungeTimer <= 0) {
+                this.predationState = 'idle';
+                this.lungeOffset = new Vec2(0, 0);
+            }
+            return;
+        }
+
+        // --- Spider Logic ---
+        const frontLeft = this.spiderLegs[0];
+        const frontRight = this.spiderLegs[1];
+
+        if (this.predationState === 'reaching') {
+            // Legs moving to prey (handled by overrideTarget lerp in leg.update)
+            // Check if close enough to grab
+            // For now, just timer based is safer / simpler
+            this.predationTimer++;
+            if (this.predationTimer > 20) { // 20 frames reach
+                this.predationState = 'retracting';
+                // Set target to mouth
+                frontLeft.overrideTarget = this.headPos;
+                frontRight.overrideTarget = this.headPos;
+            }
+        } else if (this.predationState === 'retracting') {
+            // Update targets to follow moving head
+            frontLeft.overrideTarget = this.headPos;
+            frontRight.overrideTarget = this.headPos;
+
+            // Drag prey to mouth
+            // Prey position should follow leg tips (average of two tips)
+            const tipCenter = frontLeft.currentPos.add(frontRight.currentPos).mult(0.5);
+            this.heldPrey.pos = tipCenter;
+
+            this.predationTimer++;
+            // Check distance to mouth
+            if (this.heldPrey.pos.dist(this.headPos) < 15 * this.scale) {
+                // Eat!
+                if (this.onConsumePrey) this.onConsumePrey(this.heldPrey.pos); // Trigger particles/XP logic
+
+                // Reset
+                this.heldPrey = null;
+                this.predationState = 'idle';
+                this.onConsumePrey = null;
+
+                // Release legs
+                frontLeft.overrideTarget = null;
+                frontRight.overrideTarget = null;
+            }
         }
     }
 
@@ -3501,27 +3668,9 @@ export class Insect {
         if (this.scorpionEffects) {
             for (let i = this.scorpionEffects.length - 1; i >= 0; i--) {
                 const fx = this.scorpionEffects[i];
-                if (fx.type === 'shockwave') {
-                    ctx.save();
-                    if (fx.life > 0.5) {
-                        const alpha = (fx.life - 0.5) * 2;
-                        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-                        ctx.beginPath(); ctx.arc(fx.x, fx.y, fx.radius * 0.5, 0, Math.PI * 2); ctx.fill();
-                    }
-                    ctx.beginPath(); ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
-                    ctx.strokeStyle = `rgba(${fx.color}, ${fx.life})`;
-                    ctx.lineWidth = 12 * s * fx.life; ctx.stroke();
-                    ctx.beginPath(); ctx.arc(fx.x, fx.y, fx.radius * 0.75, 0, Math.PI * 2);
-                    ctx.strokeStyle = `rgba(${fx.color}, ${fx.life * 0.6})`;
-                    ctx.lineWidth = 8 * s * fx.life; ctx.stroke();
-                    ctx.beginPath(); ctx.arc(fx.x, fx.y, fx.radius * 0.5, 0, Math.PI * 2);
-                    ctx.strokeStyle = `rgba(255, 100, 100, ${fx.life * 0.8})`;
-                    ctx.lineWidth = 3 * s * fx.life; ctx.stroke();
-                    ctx.restore();
-
-                    fx.radius += (fx.maxRadius - fx.radius) * 0.2;
-                    fx.life -= 0.06;
-                    if (fx.life <= 0) this.scorpionEffects.splice(i, 1);
+                // Check active state, though update filters it.
+                if (fx.active || fx.life > 0) {
+                    fx.draw(ctx); // Use the class draw method
                 }
             }
         }
@@ -3560,7 +3709,8 @@ export class Insect {
             ctx.fillStyle = '#8a2020';
             ctx.beginPath(); ctx.arc(0, 4 * s, 7 * s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 
-            if (this.scorpionAttackState === 2) {
+            // Highlight during attack
+            if (this.scorpionAttackState !== 'none') {
                 ctx.shadowColor = 'red';
                 ctx.shadowBlur = 15 * s;
             }

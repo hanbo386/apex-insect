@@ -31,9 +31,8 @@ export class ScorpionClaw {
     }
 
     // Note: User reference 'update' args: (bodyPos, bodyAngle, isAttacking, velocity)
-    // I will match this signature but swap isAttacking/velocity if needed or just use named args? 
-    // Insect.js calls: update(pos, angle, velocity, isAttacking). I will stick to Reference order inside update logic.
-    update(bodyPos, bodyAngle, velocity, isAttacking) {
+    // Modified to accept attackState string
+    update(bodyPos, bodyAngle, velocity, attackState = 'none') {
         const s = this.scale;
 
         // --- Reference Logic Translation ---
@@ -46,11 +45,6 @@ export class ScorpionClaw {
 
         const cos = Math.cos(refAngle);
         const sin = Math.sin(refAngle);
-
-        // [Reference]
-        // const shoulderWorldX = this.shoulderOffset.x * cos - this.shoulderOffset.y * sin;
-        // const shoulderWorldY = this.shoulderOffset.x * sin + this.shoulderOffset.y * cos;
-        // this.shoulder = new Vector(bodyPos.x + shoulderWorldX, bodyPos.y + shoulderWorldY);
 
         // Manually implementing the rotate similar to reference to be sure
         const off = this.shoulderOffsetBase.mult(s);
@@ -65,11 +59,24 @@ export class ScorpionClaw {
         const idleX = Math.cos(time + this.side) * 2 * s;
         const idleY = Math.sin(time * 1.5) * 2 * s;
 
-        // [Reference]
-        // const forwardReach = isAttacking ? 80 : 60;
-        // const sideSpread = isAttacking ? 50 : 40;
-        const forwardReach = (isAttacking ? 80 : 60) * s;
-        const sideSpread = (isAttacking ? 50 : 40) * s;
+        // 攻击动作逻辑
+        let forwardReach = 60 * s;
+        let sideSpread = 40 * s;
+        let targetOpen = 0.0; // Default closed/slight open
+
+        if (attackState === 'windup') {
+            forwardReach = 40 * s;
+            sideSpread = 55 * s;
+            targetOpen = 1.0;
+        } else if (attackState === 'strike') {
+            forwardReach = 90 * s;
+            sideSpread = 30 * s;
+            targetOpen = 0.0;
+        } else if (attackState === 'recover') {
+            forwardReach = 70 * s;
+            sideSpread = 45 * s;
+            targetOpen = 0.2;
+        }
 
         // [Reference]
         // const fwd = new Vector(Math.sin(bodyAngle), -Math.cos(bodyAngle));
@@ -77,21 +84,13 @@ export class ScorpionClaw {
         const fwd = new Vec2(Math.sin(refAngle), -Math.cos(refAngle));
         const right = new Vec2(Math.cos(refAngle), Math.sin(refAngle));
 
-        // [Reference]
-        // let targetPos = this.shoulder
-        //    .add(fwd.mult(forwardReach + idleY))
-        //    .add(right.mult(this.side * sideSpread + idleX));
         let targetPos = this.shoulder
             .add(fwd.mult(forwardReach + idleY))
             .add(right.mult(this.side * sideSpread + idleX));
 
-        // [Reference] targetPos = targetPos.sub(velocity.mult(3));
-        // Assuming velocity is already scaled or is raw pixels/frame? 
-        // In my engine, velocity magnitude is speed (approx 2.5 * scale).
-        // User Ref: baseSpeed = 2.5. 
-        // So velocity magnitude is comparable.
+        // Inertia Drag
         if (velocity) {
-            targetPos = targetPos.sub(velocity.mult(3)); // 3 frames of prediction/drag?
+            targetPos = targetPos.sub(velocity.mult(3));
         }
 
         this.wrist = targetPos;
@@ -134,8 +133,12 @@ export class ScorpionClaw {
         const naturalAngle = bodyForwardAngle + (this.side * -0.3);
 
         this.angle = naturalAngle;
-        const targetOpen = isAttacking ? 1.0 : 0.0;
-        this.open += (targetOpen - this.open) * 0.2;
+
+        // Open Speed
+        let openSpeed = 0.2;
+        if (attackState === 'strike') openSpeed = 0.8;
+
+        this.open += (targetOpen - this.open) * openSpeed;
     }
 
     draw(ctx) {
@@ -365,5 +368,63 @@ export class ScorpionLeg {
 
         ctx.fillStyle = '#1a0f05';
         ctx.beginPath(); ctx.arc(kneeX, kneeY, 2.5 * s, 0, Math.PI * 2); ctx.fill();
+    }
+}
+
+/**
+ * Scorpion Effect (Shockwave/Particles)
+ */
+export class ScorpionEffect {
+    constructor(x, y, scale = 1.0) {
+        this.pos = new Vec2(x, y);
+        this.scale = scale;
+        this.radius = 5 * scale;
+        this.maxRadius = 50 * scale;
+        this.life = 1.0;
+        this.color = '220, 20, 20';
+        this.active = true;
+    }
+
+    update() {
+        this.radius += (this.maxRadius - this.radius) * 0.2;
+        this.life -= 0.06;
+        if (this.life <= 0) this.active = false;
+    }
+
+    draw(ctx) {
+        if (!this.active) return;
+        ctx.save();
+
+        // 1. Core Flash
+        if (this.life > 0.5) {
+            const flashAlpha = (this.life - 0.5) * 2;
+            ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
+            ctx.beginPath();
+            ctx.arc(this.pos.x, this.pos.y, this.radius * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 2. Main Wave
+        ctx.beginPath();
+        ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${this.color}, ${this.life})`;
+        ctx.lineWidth = 12 * this.life * this.scale;
+        ctx.stroke();
+
+        // 3. Secondary Wave
+        ctx.beginPath();
+        ctx.arc(this.pos.x, this.pos.y, this.radius * 0.75, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${this.color}, ${this.life * 0.6})`;
+        ctx.lineWidth = 8 * this.life * this.scale;
+        ctx.stroke();
+
+        // 4. Inner Ring
+        ctx.beginPath();
+        ctx.arc(this.pos.x, this.pos.y, this.radius * 0.5, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255, 100, 100, ${this.life * 0.8})`;
+        ctx.lineWidth = 3 * this.life * this.scale;
+        ctx.stroke();
+
+        ctx.restore();
     }
 }

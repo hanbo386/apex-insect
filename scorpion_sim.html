@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>真实蝎子模拟器 (Procedural Animation)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #e6d4b3; /* 沙漠色 */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+            color: #4a3b2a;
+            background: rgba(255, 255, 255, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(4px);
+        }
+        h1 {
+            margin: 0 0 10px 0;
+            font-size: 24px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        .key {
+            display: inline-block;
+            background: #333;
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status {
+            color: #8a2020;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <h1>Scorpion Sim</h1>
+        <p>控制: <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> 或 箭头键移动</p>
+        <p>方向: <span class="key">自动</span> 跟随移动方向</p>
+        <p>攻击: <span class="key">鼠标左键</span> 蓄力冲刺攻击</p>
+        <p>进食: <span class="key">E</span> 捕食动作</p>
+        <p>功能: <span class="key">空格 Space</span> 产卵</p>
+        <p id="statusText" class="status"></p>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+<script>
+/**
+ * 向量数学工具类
+ */
+class Vector {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+    add(v) { return new Vector(this.x + v.x, this.y + v.y); }
+    sub(v) { return new Vector(this.x - v.x, this.y - v.y); }
+    mult(n) { return new Vector(this.x * n, this.y * n); }
+    mag() { return Math.sqrt(this.x * this.x + this.y * this.y); }
+    normalize() {
+        let m = this.mag();
+        return m === 0 ? new Vector(0, 0) : new Vector(this.x / m, this.y / m);
+    }
+    dist(v) { return Math.sqrt((this.x - v.x) ** 2 + (this.y - v.y) ** 2); }
+    copy() { return new Vector(this.x, this.y); }
+    static fromAngle(angle) { return new Vector(Math.cos(angle), Math.sin(angle)); }
+}
+
+// 全局配置
+const config = {
+    legCount: 3, 
+    baseSpeed: 2.5, 
+    legSpeed: 0.18, 
+    scale: 1.0 
+};
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let width, height;
+let mouse = new Vector(0, 0);
+let frame = 0;
+// 屏幕震动变量
+let shakeAmount = 0;
+
+// 输入状态
+const keys = { w: false, a: false, s: false, d: false };
+
+// 调整大小
+function resize() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// 事件监听
+window.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if (keys.hasOwnProperty(k) || k.startsWith('arrow')) {
+        if (k === 'w' || k === 'arrowup') keys.w = true;
+        if (k === 's' || k === 'arrowdown') keys.s = true;
+        if (k === 'a' || k === 'arrowleft') keys.a = true;
+        if (k === 'd' || k === 'arrowright') keys.d = true;
+    }
+    if (e.code === 'Space') {
+        scorpion.layEgg();
+    }
+    if (k === 'e') {
+        scorpion.triggerEat();
+    }
+});
+window.addEventListener('keyup', e => {
+    const k = e.key.toLowerCase();
+    if (k === 'w' || k === 'arrowup') keys.w = false;
+    if (k === 's' || k === 'arrowdown') keys.s = false;
+    if (k === 'a' || k === 'arrowleft') keys.a = false;
+    if (k === 'd' || k === 'arrowright') keys.d = false;
+});
+window.addEventListener('mousemove', e => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+});
+window.addEventListener('mousedown', () => {
+    scorpion.triggerAttack();
+});
+
+function addScreenShake(amount) {
+    shakeAmount = amount;
+}
+
+/**
+ * 卵类
+ */
+class Egg {
+    constructor(x, y) {
+        this.pos = new Vector(x, y);
+        this.angle = Math.random() * Math.PI * 2;
+        this.size = 5 + Math.random() * 2;
+    }
+    draw(ctx) {
+        ctx.save();
+        ctx.translate(this.pos.x, this.pos.y);
+        ctx.rotate(this.angle);
+        
+        ctx.fillStyle = '#fdfbf7'; 
+        ctx.strokeStyle = '#e0d0b0'; 
+        ctx.lineWidth = 1;
+        
+        ctx.beginPath();
+        ctx.ellipse(0, 0, this.size, this.size * 0.75, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.beginPath();
+        ctx.ellipse(-this.size * 0.3, -this.size * 0.3, this.size * 0.2, this.size * 0.15, -Math.PI/4, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.restore();
+    }
+}
+
+/**
+ * [新增] 攻击特效类 (Shockwave)
+ */
+class Shockwave {
+    constructor(x, y) {
+        this.pos = new Vector(x, y);
+        this.radius = 5; 
+        this.maxRadius = 50; 
+        this.life = 1.0;
+        this.color = '220, 20, 20'; 
+    }
+    update() {
+        this.radius += (this.maxRadius - this.radius) * 0.2;
+        this.life -= 0.06;
+    }
+    draw(ctx) {
+        ctx.save();
+        
+        // [修改] 多层光圈渲染，制造复杂的能量爆发感
+
+        // 1. 核心闪光 (最亮，位于中心)
+        if(this.life > 0.5) {
+             const flashAlpha = (this.life - 0.5) * 2;
+             ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
+             ctx.beginPath();
+             ctx.arc(this.pos.x, this.pos.y, this.radius * 0.5, 0, Math.PI * 2);
+             ctx.fill();
+        }
+
+        // 2. 主冲击波 (最外层，厚实)
+        ctx.beginPath();
+        ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${this.color}, ${this.life})`;
+        ctx.lineWidth = 12 * this.life; 
+        ctx.stroke();
+
+        // 3. 次级波动 (中间层，稍微滞后，增加厚重感)
+        ctx.beginPath();
+        ctx.arc(this.pos.x, this.pos.y, this.radius * 0.75, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${this.color}, ${this.life * 0.6})`;
+        ctx.lineWidth = 8 * this.life;
+        ctx.stroke();
+
+        // 4. 能量残响 (内层，高亮线，增加锐利度)
+        ctx.beginPath();
+        ctx.arc(this.pos.x, this.pos.y, this.radius * 0.5, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255, 100, 100, ${this.life * 0.8})`; // 偏亮的粉红/白色
+        ctx.lineWidth = 3 * this.life;
+        ctx.stroke();
+
+        ctx.restore();
+    }
+}
+
+/**
+ * 钳子/须肢 IK 系统
+ */
+class Claw {
+    constructor(side) {
+        this.side = side; 
+        
+        this.upperArmLen = 35; 
+        this.foreArmLen = 40;  
+        
+        this.shoulderOffset = new Vector(side * 8, -10);
+        
+        this.shoulder = new Vector(0,0);
+        this.elbow = new Vector(0,0);
+        this.wrist = new Vector(0,0);
+        this.angle = 0;
+        this.open = 0;
+    }
+
+    update(bodyPos, bodyAngle, attackState, velocity) {
+        const cos = Math.cos(bodyAngle);
+        const sin = Math.sin(bodyAngle);
+        
+        const shoulderWorldX = this.shoulderOffset.x * cos - this.shoulderOffset.y * sin;
+        const shoulderWorldY = this.shoulderOffset.x * sin + this.shoulderOffset.y * cos;
+        this.shoulder = new Vector(bodyPos.x + shoulderWorldX, bodyPos.y + shoulderWorldY);
+
+        const time = Date.now() / 800;
+        const idleX = Math.cos(time + this.side) * 2;
+        const idleY = Math.sin(time * 1.5) * 2;
+        
+        // 攻击动作逻辑
+        let forwardReach = 60;
+        let sideSpread = 40;
+        let targetOpen = 0.2; // 默认微张
+
+        if (attackState === 'windup') {
+            forwardReach = 40;
+            sideSpread = 55;
+            targetOpen = 1.0;
+        } else if (attackState === 'strike') {
+            forwardReach = 90;
+            sideSpread = 30; 
+            targetOpen = 0.0;
+        } else if (attackState === 'recover') {
+            forwardReach = 70;
+            sideSpread = 45;
+            targetOpen = 0.2;
+        } else if (attackState === 'eating') {
+            // 捕食动作：收回钳子到口部
+            forwardReach = 20; 
+            sideSpread = 12;
+            
+            // 咀嚼动作动画
+            const chewCycle = (Date.now() / 150) % (Math.PI * 2);
+            // 让左右钳子交替或同步微动
+            targetOpen = 0.2 + Math.sin(chewCycle) * 0.15;
+            
+            // 钳子前后移动
+             const chewMove = Math.cos(chewCycle) * 3;
+             forwardReach += chewMove;
+        }
+        
+        const fwd = new Vector(Math.sin(bodyAngle), -Math.cos(bodyAngle));
+        const right = new Vector(Math.cos(bodyAngle), Math.sin(bodyAngle));
+        
+        let targetPos = this.shoulder
+            .add(fwd.mult(forwardReach + idleY))
+            .add(right.mult(this.side * sideSpread + idleX));
+            
+        // 惯性拖拽
+        if (attackState !== 'eating') {
+            targetPos = targetPos.sub(velocity.mult(3));
+        }
+
+        this.wrist = targetPos;
+        const dist = this.shoulder.dist(this.wrist);
+        
+        const maxLen = this.upperArmLen + this.foreArmLen;
+        if (dist > maxLen) {
+            const dir = this.wrist.sub(this.shoulder).normalize();
+            this.wrist = this.shoulder.add(dir.mult(maxLen - 0.1));
+        }
+        
+        const d = this.shoulder.dist(this.wrist);
+        const a = this.upperArmLen;
+        const b = this.foreArmLen;
+        const c = d;
+        
+        let cosAngle = (a*a + c*c - b*b) / (2*a*c);
+        // 安全限制
+        if (cosAngle < -1) cosAngle = -1;
+        if (cosAngle > 1) cosAngle = 1;
+
+        const angleOffset = Math.acos(cosAngle);
+        const baseAngle = Math.atan2(this.wrist.y - this.shoulder.y, this.wrist.x - this.shoulder.x);
+        
+        // 捕食时调整肘部角度，使其看起来更自然地收缩
+        let currentSide = this.side;
+        if (attackState === 'eating') {
+            // 肘部外扩
+            currentSide = this.side * 1.5;
+        }
+
+        const elbowAngle = baseAngle + (currentSide * angleOffset);
+        
+        this.elbow = new Vector(
+            this.shoulder.x + Math.cos(elbowAngle) * this.upperArmLen,
+            this.shoulder.y + Math.sin(elbowAngle) * this.upperArmLen
+        );
+
+        const bodyForwardAngle = bodyAngle - Math.PI/2;
+        let naturalAngle = bodyForwardAngle + (this.side * -0.3); 
+        
+        if (attackState === 'eating') {
+            // 捕食时钳子指向嘴部
+            naturalAngle = bodyForwardAngle + (this.side * -0.8);
+        }
+
+        this.angle = naturalAngle;
+        
+        let openSpeed = 0.1;
+        if (attackState === 'strike') openSpeed = 0.8;
+        if (attackState === 'eating') openSpeed = 0.3;
+        
+        this.open += (targetOpen - this.open) * openSpeed;
+    }
+
+    draw(ctx) {
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        ctx.strokeStyle = '#3e2b1d';
+        ctx.lineWidth = 7; 
+        ctx.beginPath(); ctx.moveTo(this.shoulder.x, this.shoulder.y); ctx.lineTo(this.elbow.x, this.elbow.y); ctx.stroke();
+        
+        ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.moveTo(this.elbow.x, this.elbow.y); ctx.lineTo(this.wrist.x, this.wrist.y); ctx.stroke();
+        
+        ctx.fillStyle = '#2a1a10';
+        ctx.beginPath(); ctx.arc(this.elbow.x, this.elbow.y, 4, 0, Math.PI*2); ctx.fill();
+
+        ctx.save();
+        ctx.translate(this.wrist.x, this.wrist.y);
+        ctx.rotate(this.angle);
+
+        const scale = 2.0; 
+
+        ctx.fillStyle = '#2d1e10';
+        ctx.beginPath(); ctx.ellipse(-3 * scale, 0, 5 * scale, 4 * scale, 0, 0, Math.PI*2); ctx.fill();
+        
+        const openAngle = this.open * 0.5; 
+
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 2;
+        ctx.fillStyle = '#150a05'; 
+        
+        // 上钳
+        ctx.beginPath(); 
+        ctx.moveTo(0, -1 * scale); 
+        ctx.bezierCurveTo(8 * scale, -8 * scale, 20 * scale, -10 * scale, 28 * scale, -2 * scale); 
+        ctx.lineTo(26 * scale, -2 * scale); 
+        ctx.quadraticCurveTo(15 * scale, -3 * scale - (openAngle * 10), 0, -1 * scale);
+        ctx.fill();
+        ctx.stroke();
+
+        // 下钳
+        ctx.save();
+        ctx.rotate(openAngle); 
+        
+        ctx.beginPath(); 
+        ctx.moveTo(0, 1 * scale); 
+        ctx.bezierCurveTo(8 * scale, 7 * scale, 18 * scale, 8 * scale, 25 * scale, 0); 
+        ctx.quadraticCurveTo(12 * scale, 3 * scale, 0, 1 * scale);
+        
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.beginPath();
+        ctx.ellipse(5 * scale, -4 * scale, 8 * scale, 2 * scale, -0.2, 0, Math.PI*2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+}
+
+/**
+ * 腿部 IK 系统
+ */
+class Leg {
+    constructor(side, index) {
+        this.side = side; 
+        this.index = index;
+        
+        const spacingY = 14; 
+        const startY = 15;
+        
+        this.shoulderOffset = new Vector(side * (12 + index * 4), startY + index * spacingY);
+
+        const spreadX = 40 + (index * 10); 
+        const spreadY = -20 + (index * 25); 
+        
+        this.restOffset = new Vector(side * spreadX, spreadY);
+        this.stepThreshold = 40 + (index * 5); 
+        
+        this.currentPos = new Vector(0, 0);
+        this.nextPos = new Vector(0, 0);
+        this.isStepping = false;
+        this.stepProgress = 0;
+        
+        this.shoulderPos = new Vector(0,0);
+        this.currentPos = new Vector(width/2 + this.restOffset.x, height/2 + this.restOffset.y);
+    }
+
+    update(bodyPos, bodyAngle, velocity, isAttacking) {
+        const cos = Math.cos(bodyAngle);
+        const sin = Math.sin(bodyAngle);
+        
+        const shoulderWorldX = this.shoulderOffset.x * cos - this.shoulderOffset.y * sin;
+        const shoulderWorldY = this.shoulderOffset.x * sin + this.shoulderOffset.y * cos;
+        this.shoulderPos = new Vector(bodyPos.x + shoulderWorldX, bodyPos.y + shoulderWorldY);
+
+        const restWorldX = this.restOffset.x * cos - this.restOffset.y * sin;
+        const restWorldY = this.restOffset.x * sin + this.restOffset.y * cos;
+        
+        const predFactor = isAttacking ? 12 : 8;
+        const prediction = velocity.mult(predFactor);
+        const idealPos = new Vector(
+            bodyPos.x + restWorldX + prediction.x,
+            bodyPos.y + restWorldY + prediction.y
+        );
+
+        const distToIdeal = this.currentPos.dist(idealPos);
+        let thresh = this.stepThreshold;
+        if(isAttacking) thresh *= 0.8;
+
+        if (!this.isStepping && distToIdeal > thresh) {
+            this.isStepping = true;
+            this.stepProgress = 0;
+            this.nextPos = idealPos.copy();
+            this.nextPos.x += (Math.random() - 0.5) * 5;
+            this.nextPos.y += (Math.random() - 0.5) * 5;
+        }
+
+        if (this.isStepping) {
+            let spd = config.legSpeed;
+            if(isAttacking) spd = 0.4;
+
+            this.stepProgress += spd;
+            if (this.stepProgress >= 1) {
+                this.stepProgress = 1;
+                this.isStepping = false;
+                this.currentPos = this.nextPos.copy();
+                if(Math.random() > 0.5) particles.push(new Particle(this.currentPos.x, this.currentPos.y));
+            } else {
+                this.currentPos.x = this.currentPos.x + (this.nextPos.x - this.currentPos.x) * spd; 
+                this.currentPos.y = this.currentPos.y + (this.nextPos.y - this.currentPos.y) * spd;
+            }
+        }
+    }
+
+    draw(ctx) {
+        const shoulder = this.shoulderPos;
+        const foot = this.currentPos;
+        
+        // IK 计算
+        const midX = (shoulder.x + foot.x) / 2;
+        const midY = (shoulder.y + foot.y) / 2;
+        const angle = Math.atan2(foot.y - shoulder.y, foot.x - shoulder.x);
+        const dist = shoulder.dist(foot);
+        
+        let lift = 0;
+        if (this.isStepping) lift = Math.sin(this.stepProgress * Math.PI) * 15;
+
+        // 膝盖高度
+        let kneeOffset = 35; 
+        if (dist > this.stepThreshold * 1.5) kneeOffset = 20;
+
+        const kneeX = midX + Math.cos(angle - Math.PI/2 * this.side) * kneeOffset;
+        const kneeY = midY + Math.sin(angle - Math.PI/2 * this.side) * kneeOffset - lift;
+        
+        // 辅助函数
+        const getPerp = (p1x, p1y, p2x, p2y, width) => {
+            const dx = p2x - p1x;
+            const dy = p2y - p1y;
+            const len = Math.sqrt(dx*dx + dy*dy);
+            if(len === 0) return {x:0, y:0};
+            return { x: (-dy/len) * width, y: (dx/len) * width };
+        };
+
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        // --- 绘制大腿 ---
+        const thighPerp = getPerp(shoulder.x, shoulder.y, kneeX, kneeY, 5); 
+        
+        ctx.fillStyle = '#261a10'; 
+        ctx.strokeStyle = '#0f0500'; 
+        ctx.lineWidth = 1;
+        
+        ctx.beginPath();
+        ctx.moveTo(shoulder.x + thighPerp.x, shoulder.y + thighPerp.y);
+        ctx.lineTo(kneeX + thighPerp.x * 0.7, kneeY + thighPerp.y * 0.7); 
+        ctx.lineTo(kneeX - thighPerp.x * 0.7, kneeY - thighPerp.y * 0.7);
+        ctx.lineTo(shoulder.x - thighPerp.x, shoulder.y - thighPerp.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        
+        // 大腿高光
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        ctx.lineWidth = 2;
+        ctx.moveTo(shoulder.x, shoulder.y);
+        ctx.lineTo(kneeX, kneeY);
+        ctx.stroke();
+
+        // --- 绘制小腿 ---
+        const calfPerp = getPerp(kneeX, kneeY, foot.x, foot.y, 4); 
+        
+        ctx.fillStyle = '#3e2b1d'; 
+        ctx.strokeStyle = '#0f0500';
+        ctx.lineWidth = 1;
+
+        ctx.beginPath();
+        ctx.moveTo(kneeX + calfPerp.x, kneeY + calfPerp.y);
+        ctx.lineTo(foot.x, foot.y); 
+        ctx.lineTo(kneeX - calfPerp.x, kneeY - calfPerp.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // --- 膝盖装甲与尖刺 (Knee Spike) ---
+        // [修改] 增加层次感：弯曲、高光
+        ctx.fillStyle = '#1a0500';
+        ctx.beginPath();
+        ctx.arc(kneeX, kneeY, 6, 0, Math.PI*2);
+        ctx.fill();
+        
+        const kneeDirX = Math.cos(angle - Math.PI/2 * this.side);
+        const kneeDirY = Math.sin(angle - Math.PI/2 * this.side);
+        const spikeLen = 14; 
+        
+        // 绘制弯曲的角质尖刺
+        ctx.beginPath();
+        // 根部宽
+        ctx.moveTo(kneeX + calfPerp.x * 0.8, kneeY + calfPerp.y * 0.8);
+        
+        // 尖端位置
+        const spikeTipX = kneeX + kneeDirX * spikeLen;
+        const spikeTipY = kneeY + kneeDirY * spikeLen;
+        
+        // 使用贝塞尔曲线制造"角"的弯曲感
+        const cpX = kneeX + kneeDirX * 5 + calfPerp.x * 0.5;
+        const cpY = kneeY + kneeDirY * 5 + calfPerp.y * 0.5;
+        
+        ctx.quadraticCurveTo(cpX, cpY, spikeTipX, spikeTipY);
+        ctx.lineTo(kneeX - calfPerp.x * 0.8, kneeY - calfPerp.y * 0.8);
+        ctx.fill();
+        
+        // 尖刺高光棱线
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.moveTo(kneeX, kneeY);
+        ctx.lineTo(spikeTipX * 0.8 + kneeX * 0.2, spikeTipY * 0.8 + kneeY * 0.2);
+        ctx.stroke();
+        
+        // --- 脚尖 (Detailed Tarsus) ---
+        // [修改] 复杂化脚尖：增加关节和双钩爪
+        
+        // 计算方向
+        const footDx = foot.x - kneeX;
+        const footDy = foot.y - kneeY;
+        const footLen = Math.sqrt(footDx*footDx + footDy*footDy);
+        const footNx = footDx / footLen;
+        const footNy = footDy / footLen;
+        
+        // 1. 跗节基座 (连接球)
+        const baseX = foot.x - footNx * 4;
+        const baseY = foot.y - footNy * 4;
+        
+        ctx.fillStyle = '#2d1e10';
+        ctx.beginPath();
+        ctx.arc(baseX, baseY, 3.5, 0, Math.PI*2);
+        ctx.fill();
+
+        // 2. 双钩爪 (Dual Claws)
+        // 侧向向量
+        const perpX = -footNy;
+        const perpY = footNx;
+        
+        const drawClaw = (offsetX, offsetY, scale) => {
+            ctx.fillStyle = '#050202';
+            ctx.beginPath();
+            
+            // 爪根
+            ctx.moveTo(baseX + offsetX * 2, baseY + offsetY * 2);
+            
+            // 爪尖 (弯曲)
+            const tipX = foot.x + footNx * 8 * scale + offsetX * 4;
+            const tipY = foot.y + footNy * 8 * scale + offsetY * 4;
+            
+            // 外弧
+            ctx.quadraticCurveTo(foot.x + offsetX * 5, foot.y + offsetY * 5, tipX, tipY);
+            
+            // 内弧 (回到中心线)
+            ctx.lineTo(foot.x + footNx * 4, foot.y + footNy * 4);
+            
+            ctx.fill();
+            
+            // 爪子高光
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 0.8;
+            ctx.moveTo(baseX + offsetX * 2, baseY + offsetY * 2);
+            ctx.quadraticCurveTo(foot.x + offsetX * 3, foot.y + offsetY * 3, tipX, tipY);
+            ctx.stroke();
+        };
+
+        // 绘制左右两个小爪子
+        drawClaw(perpX, perpY, 1.0);   // 左爪
+        drawClaw(-perpX, -perpY, 1.0); // 右爪
+    }
+}
+
+/**
+ * 蝎子主类
+ */
+class Scorpion {
+    constructor(x, y) {
+        this.pos = new Vector(x, y);
+        this.velocity = new Vector(0, 0);
+        this.angle = 0;
+        this.targetAngle = 0;
+        
+        // 攻击系统变量
+        this.attackState = 'none'; // none, windup, strike, recover, eating
+        this.attackTimer = 0;
+        this.stingProgress = 0;
+        
+        // 身体分段
+        this.segments = [];
+        const totalSegs = 16;
+        for(let i=0; i<totalSegs; i++) {
+            let size = 10;
+            if (i < 3) size = 16; // 头
+            else if (i < 9) size = 20 - (i-3)*1.2; // 身体
+            else size = 8; // 尾巴
+            
+            this.segments.push({
+                pos: new Vector(x, y + i * 8),
+                size: size, 
+                angle: 0,
+                type: i < 3 ? 'head' : (i < 10 ? 'body' : 'tail')
+            });
+        }
+
+        this.legs = [];
+        for(let i=0; i<3; i++) {
+            this.legs.push(new Leg(-1, i)); 
+            this.legs.push(new Leg(1, i));
+        }
+
+        this.claws = [new Claw(-1), new Claw(1)];
+    }
+
+    layEgg() {
+        const spawnSegment = this.segments[9]; 
+        if (spawnSegment) {
+            eggs.push(new Egg(spawnSegment.pos.x, spawnSegment.pos.y));
+        }
+    }
+
+    // 触发攻击
+    triggerAttack() {
+        if (this.attackState === 'none') {
+            this.attackState = 'windup';
+            this.attackTimer = 15; // 蓄力帧数
+        }
+    }
+
+    // [新增] 触发进食
+    triggerEat() {
+        // 只有在空闲或移动时可以进食，攻击中不行
+        if (this.attackState === 'none') {
+            this.attackState = 'eating';
+            this.attackTimer = 180; // 进食持续时间 (60fps * 3s = 180帧)
+            
+            // 更新UI状态
+             const status = document.getElementById('statusText');
+             status.innerText = "Current Action: PREDATION (Eating)";
+        }
+    }
+
+    update() {
+        // --- 攻击状态机 ---
+        let speedMult = 1.0;
+        let stingTarget = 0;
+
+        if (this.attackState === 'windup') {
+            speedMult = 0.5;
+            stingTarget = 0.2; // 尾巴稍微抬起
+            const backDir = Vector.fromAngle(this.angle + Math.PI);
+            this.velocity = this.velocity.add(backDir.mult(0.2));
+
+            this.attackTimer--;
+            if (this.attackTimer <= 0) {
+                this.attackState = 'strike';
+                this.attackTimer = 8; 
+                const fwdDir = Vector.fromAngle(this.angle - Math.PI/2);
+                this.velocity = fwdDir.mult(15); 
+                addScreenShake(10);
+                
+                // [原有] 尾刺光圈特效
+                const head = this.segments[0];
+                const impactPos = head.pos.add(fwdDir.mult(50));
+                activeEffects.push(new Shockwave(impactPos.x, impactPos.y));
+
+                // [修复] 左右钳子爆发光圈 - 位置修正
+                const rightDir = new Vector(Math.cos(this.angle), Math.sin(this.angle));
+                
+                this.claws.forEach(claw => {
+                    const clawImpact = this.pos
+                        .add(fwdDir.mult(145)) 
+                        .add(rightDir.mult(claw.side * 25));
+                    
+                    // 创建略小的光圈给钳子，区分层次
+                    const wave = new Shockwave(clawImpact.x, clawImpact.y);
+                    wave.maxRadius = 30; 
+                    activeEffects.push(wave);
+                });
+            }
+        } 
+        else if (this.attackState === 'strike') {
+            stingTarget = 1.0; // 刺下去
+            speedMult = 0; 
+            this.attackTimer--;
+            if (this.attackTimer <= 0) {
+                this.attackState = 'recover';
+                this.attackTimer = 20; 
+            }
+        } 
+        else if (this.attackState === 'recover') {
+            speedMult = 0.3;
+            stingTarget = 0.0; // 目标变为初始状态
+            this.attackTimer--;
+            if (this.attackTimer <= 0) {
+                this.attackState = 'none';
+                document.getElementById('statusText').innerText = "";
+            }
+        }
+        else if (this.attackState === 'eating') {
+            // [新增] 进食状态逻辑
+            speedMult = 0.0; // 停止移动
+            stingTarget = 0.1; // 尾巴稍微翘起警戒
+            
+            // 进食倒计时
+            this.attackTimer--;
+            
+            // 产生一些小碎屑粒子表示在吃东西
+            if (this.attackTimer % 5 === 0) {
+                // 在头部前方产生粒子
+                const head = this.segments[0];
+                const fwd = Vector.fromAngle(this.angle - Math.PI/2);
+                const particlePos = head.pos.add(fwd.mult(10)).add(new Vector((Math.random()-0.5)*5, (Math.random()-0.5)*5));
+                particles.push(new Particle(particlePos.x, particlePos.y));
+            }
+
+            if (this.attackTimer <= 0) {
+                this.attackState = 'none';
+                document.getElementById('statusText').innerText = ""; // 清除状态文本
+            }
+        }
+
+        // --- 常规移动逻辑 ---
+        let moveVec = new Vector(0, 0);
+        
+        // 只有非攻击且非进食状态下，才能响应按键移动
+        // [修改] 确保进食时不能移动
+        if (this.attackState === 'none' || this.attackState === 'windup') {
+            if (keys.w) moveVec.y = -1;
+            if (keys.s) moveVec.y = 1;
+            if (keys.a) moveVec.x = -1;
+            if (keys.d) moveVec.x = 1;
+        }
+
+        if (moveVec.mag() > 0) {
+            this.targetAngle = Math.atan2(moveVec.y, moveVec.x) + Math.PI / 2;
+            moveVec = moveVec.normalize().mult(config.baseSpeed * speedMult);
+            this.velocity = this.velocity.add(moveVec.sub(this.velocity).mult(0.1));
+        } else {
+            let friction = 0.8;
+            if (this.attackState === 'recover' || this.attackState === 'eating') friction = 0.85; 
+            this.velocity = this.velocity.mult(friction);
+        }
+
+        this.pos = this.pos.add(this.velocity);
+
+        let diff = this.targetAngle - this.angle;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        
+        if (this.attackState === 'none') {
+            this.angle += diff * 0.08;
+        }
+
+        // --- 身体 IK ---
+        this.segments[0].pos = this.pos.copy();
+        this.segments[0].angle = this.angle;
+
+        // 尾刺动画平滑控制
+        let stingSmooth = 0.1; // 默认慢速
+        if (this.attackState === 'strike') {
+            stingSmooth = 0.6; // 刺击极快
+        } else if (this.attackState === 'recover') {
+            stingSmooth = 0.2; // 收回速度
+        }
+        
+        this.stingProgress += (stingTarget - this.stingProgress) * stingSmooth;
+
+        for (let i = 1; i < this.segments.length; i++) {
+            const seg = this.segments[i];
+            const prev = this.segments[i-1];
+            
+            const spacing = seg.type === 'tail' ? 12 : 6;
+
+            if (seg.type === 'tail') { 
+                const tailIndex = i - 10;
+                
+                // [核心修复] 使用Hips(seg 9)和Body(seg 8)来计算准确的身体朝向
+                const hips = this.segments[9];
+                const lowerBody = this.segments[8];
+                
+                // 计算"后方"向量
+                let hipsBackDir = hips.pos.sub(lowerBody.pos).normalize();
+                if (hipsBackDir.mag() === 0) hipsBackDir = Vector.fromAngle(hips.angle + Math.PI/2);
+                
+                // [修改] 待机姿态 (Rest Pose): 自然向后舒展
+                let distBack = 0;
+                
+                // 简单的线性分布，每节向后延伸一定的距离
+                distBack = 15 + (tailIndex * 12);
+
+                const sway = Math.sin((Date.now() / 1000) + (tailIndex * 0.5)) * 2;
+                
+                // 获取侧向向量
+                const rightDir = new Vector(-hipsBackDir.y, hipsBackDir.x);
+
+                // 目标位置
+                let restTarget = hips.pos.add(hipsBackDir.mult(distBack)).add(rightDir.mult(sway));
+
+                // 攻击目标 (Attack Pose)
+                const head = this.segments[0];
+                const attackDir = Vector.fromAngle(head.angle - Math.PI/2);
+                const attackDist = 30 + (tailIndex * 12); 
+                const attackTarget = head.pos.add(attackDir.mult(attackDist));
+
+                // [优化] 混合插值
+                let targetPos = new Vector(
+                    restTarget.x * (1 - this.stingProgress) + attackTarget.x * this.stingProgress,
+                    restTarget.y * (1 - this.stingProgress) + attackTarget.y * this.stingProgress
+                );
+                
+                // 拱起修正
+                const archFactor = Math.sin(this.stingProgress * Math.PI); 
+                const bodyUpDir = Vector.fromAngle(this.segments[5].angle); 
+                const archAmount = 60 * archFactor; 
+                
+                // 应用拱起
+                targetPos = targetPos.add(bodyUpDir.mult(archAmount));
+
+                // 肌肉力：平滑移动到目标
+                const muscleStiffness = 0.2; 
+                seg.pos = seg.pos.add(targetPos.sub(seg.pos).mult(muscleStiffness));
+
+                // 骨骼约束：强制保持间距
+                let constraintVec = seg.pos.sub(prev.pos);
+                if (constraintVec.mag() === 0) constraintVec = hipsBackDir.copy(); 
+                constraintVec = constraintVec.normalize().mult(spacing);
+                seg.pos = prev.pos.add(constraintVec);
+                
+                // 角度更新
+                let angleToPrev = Math.atan2(prev.pos.y - seg.pos.y, prev.pos.x - seg.pos.x);
+                seg.angle = angleToPrev + Math.PI/2;
+
+            } else {
+                // 身体躯干 IK
+                let dir = seg.pos.sub(prev.pos);
+                if (dir.mag() === 0) dir = new Vector(0, 1);
+                dir = dir.normalize().mult(spacing);
+                seg.pos = prev.pos.add(dir);
+                seg.angle = Math.atan2(-dir.y, -dir.x) - Math.PI/2;
+            }
+        }
+
+        const isMovingFast = this.velocity.mag() > 5;
+        this.legs.forEach(leg => leg.update(this.pos, this.angle, this.velocity, isMovingFast));
+        this.claws.forEach(claw => claw.update(this.pos, this.angle, this.attackState, this.velocity));
+    }
+
+    draw(ctx) {
+        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        this.segments.forEach(seg => {
+            ctx.beginPath();
+            ctx.ellipse(seg.pos.x + 4, seg.pos.y + 4, seg.size, seg.size * 0.8, seg.angle, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        this.legs.forEach(leg => leg.draw(ctx));
+        this.claws.forEach(claw => claw.draw(ctx));
+
+        // 身体绘制 (反向：Body -> Head -> Tail)
+        for(let i=9; i>=3; i--) { this.drawSegment(ctx, i); }
+        for(let i=2; i>=0; i--) { this.drawSegment(ctx, i); }
+        for(let i=10; i<this.segments.length; i++) { this.drawSegment(ctx, i); }
+        
+        const last = this.segments[this.segments.length-1];
+        ctx.save();
+        ctx.translate(last.pos.x, last.pos.y);
+        ctx.rotate(last.angle);
+        
+        // 毒囊 (Bulb)
+        ctx.fillStyle = '#8a2020';
+        ctx.beginPath(); ctx.arc(0, 4, 7, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        
+        // 毒刺在攻击时发光
+        if (this.attackState === 'strike') {
+            ctx.shadowColor = 'red';
+            ctx.shadowBlur = 15;
+        }
+
+        // [修改] 毒刺：加长、弯钩、根粗尾细
+        // 使用深黑色填充，体现角质层的硬度
+        ctx.fillStyle = '#0f0505'; 
+        ctx.beginPath();
+        // 根部 (连接毒囊)
+        ctx.moveTo(-4, 9); 
+        ctx.lineTo(4, 9);
+        
+        // 绘制弯钩 (Hook Shape)
+        // [修改] 终极弯曲：夸张的死神镰刀
+        // 控制点 X 值推到极限 (55)，弧度极大，长度增加到 80
+        
+        // 右侧曲线 (Outer edge)
+        ctx.bezierCurveTo(55, 15, 45, 75, 0, 80); 
+        
+        // 左侧曲线 (Inner edge) - 内弧紧缩，形成极薄的刀锋感
+        ctx.bezierCurveTo(15, 75, 35, 20, -4, 9);
+        
+        ctx.fill();
+        
+        // 增加一道细微的高光，强化立体感
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 1;
+        // 高光路径也跟随极致弯曲的表面
+        ctx.moveTo(0, 12);
+        ctx.quadraticCurveTo(40, 45, 2, 75);
+        ctx.stroke();
+        
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
+    drawSegment(ctx, i) {
+        const seg = this.segments[i];
+        ctx.save();
+        ctx.translate(seg.pos.x, seg.pos.y);
+        ctx.rotate(seg.angle);
+
+        ctx.strokeStyle = '#2d241b';
+        ctx.lineWidth = 1;
+
+        if (seg.type === 'head') {
+            ctx.fillStyle = '#4a3b2a';
+            const w = seg.size;
+            const h = seg.size * 0.8;
+            ctx.beginPath();
+            ctx.moveTo(-w, h); 
+            ctx.bezierCurveTo(-w, -h, w, -h, w, h); 
+            ctx.lineTo(-w, h);
+            ctx.fill(); ctx.stroke();
+            
+            if (i===1) {
+                ctx.fillStyle = 'black';
+                ctx.beginPath(); ctx.arc(0, -5, 2, 0, Math.PI*2); ctx.fill(); 
+                ctx.beginPath(); ctx.arc(-w+2, -2, 1, 0, Math.PI*2); ctx.fill(); 
+                ctx.beginPath(); ctx.arc(w-2, -2, 1, 0, Math.PI*2); ctx.fill();
+            }
+        } else if (seg.type === 'body') {
+            ctx.fillStyle = '#5c4935'; 
+            const w = seg.size;
+            const h = seg.size * 0.35; 
+            ctx.beginPath(); ctx.rect(-w, -h, w*2, h*2); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.moveTo(0, -h); ctx.lineTo(0, h); ctx.stroke();
+        } else if (seg.type === 'tail') {
+            ctx.fillStyle = '#755c42';
+            const w = seg.size;
+            const h = seg.size * 1.5; 
+            ctx.beginPath();
+            ctx.moveTo(-w, -h/2); ctx.lineTo(w, -h/2); ctx.lineTo(w*0.8, h/2); ctx.lineTo(-w*0.8, h/2);
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath(); ctx.moveTo(-w*0.5, 0); ctx.lineTo(w*0.5, 0); ctx.stroke();
+        }
+        ctx.restore();
+    }
+}
+
+class Particle {
+    constructor(x, y) {
+        this.pos = new Vector(x, y);
+        this.life = 1.0;
+        this.vel = new Vector((Math.random()-0.5), (Math.random()-0.5));
+    }
+    update() {
+        this.pos = this.pos.add(this.vel);
+        this.life -= 0.05;
+    }
+    draw(ctx) {
+        ctx.fillStyle = `rgba(160, 140, 110, ${this.life})`;
+        ctx.fillRect(this.pos.x, this.pos.y, 2, 2);
+    }
+}
+
+const scorpion = new Scorpion(window.innerWidth/2, window.innerHeight/2);
+let particles = [];
+let eggs = []; 
+// [新增] 存储光圈特效的数组
+let activeEffects = [];
+
+function animate() {
+    ctx.clearRect(0, 0, width, height);
+
+    // 应用屏幕震动
+    ctx.save();
+    if (shakeAmount > 0) {
+        const dx = (Math.random() - 0.5) * shakeAmount;
+        const dy = (Math.random() - 0.5) * shakeAmount;
+        ctx.translate(dx, dy);
+        shakeAmount *= 0.9; // 衰减
+        if (shakeAmount < 0.5) shakeAmount = 0;
+    }
+
+    ctx.strokeStyle = 'rgba(200, 180, 160, 0.3)';
+    ctx.lineWidth = 1;
+    const gridSize = 50;
+    for(let x=0; x<width; x+=gridSize) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke(); }
+    for(let y=0; y<height; y+=gridSize) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke(); }
+
+    for(let i=0; i<eggs.length; i++) {
+        eggs[i].draw(ctx);
+    }
+
+    // [新增] 绘制和更新光圈特效
+    for(let i=activeEffects.length-1; i>=0; i--) {
+        activeEffects[i].update();
+        activeEffects[i].draw(ctx);
+        if(activeEffects[i].life <= 0) {
+            activeEffects.splice(i, 1);
+        }
+    }
+
+    for(let i=particles.length-1; i>=0; i--) {
+        particles[i].update();
+        particles[i].draw(ctx);
+        if(particles[i].life <= 0) particles.splice(i, 1);
+    }
+
+    scorpion.update();
+    scorpion.draw(ctx);
+
+    ctx.restore(); // 恢复震动前的状态
+
+    frame++;
+    requestAnimationFrame(animate);
+}
+
+animate();
+
+</script>
+</body>
+</html>
