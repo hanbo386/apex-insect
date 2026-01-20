@@ -11,7 +11,7 @@ import { RhinoBeetleLeg } from './RhinoBeetleParts.js';
 import { CentipedeLeg } from './CentipedeParts.js';
 import { ScorpionLeg, ScorpionClaw, ScorpionEffect } from './ScorpionParts.js';
 import { TitanLeg, TitanUtils } from './TitanParts.js';
-import { WetaLeg, WetaAntenna, drawGiantWeta } from './WetaParts.js';
+import { WetaLeg, WetaAntenna, drawGiantWeta, WetaEffect } from './WetaParts.js';
 import { TarantulaLeg, AttackEffect, WebProjectile, TARANTULA_SETTINGS } from './TarantulaParts.js';
 
 // --- Standardized Size Configuration ---
@@ -878,9 +878,10 @@ export class Insect {
         // --- Update Predation Logic (Spider / Mantis) ---
         this.updatePredation();
 
-        // Immobilize if eating (Spider / Mantis Grapple / Scorpion Strike)
+        // Immobilize if eating (Spider / Mantis Grapple / Scorpion Strike / Weta Bite)
         if (((this.form === 'SPIDER' || this.form === 'MANTIS') && this.predationState !== 'idle') ||
-            (this.form === 'SCORPION' && this.scorpionAttackState !== 'none')) {
+            (this.form === 'SCORPION' && this.scorpionAttackState !== 'none') ||
+            (this.form === 'GIANT_WETA' && (this.wetaState === 'biting' || this.wetaState === 'attacking'))) {
             input = { up: false, down: false, left: false, right: false, shift: false };
         }
 
@@ -1008,13 +1009,7 @@ export class Insect {
             this.updateTitan(0.016);
             return;
         } else if (this.form === 'GIANT_WETA') {
-            // Update Weta Legs
-            this.wetaLegs.forEach(leg => leg.update(this.pos, this.angle, this.vel, this.maxSpeed, this.scale));
-            // Update Weta Antennae (Need head pos for root)
-            this.wetaAntennae.forEach((ant, i) => {
-                let side = (i === 0) ? -1 : 1;
-                ant.update(this.pos, this.angle, side);
-            });
+            this.updateGiantWeta(input);
             return;
         }
 
@@ -1089,6 +1084,7 @@ export class Insect {
             return;
         } else if (this.form === 'GIANT_WETA') {
             drawGiantWeta(ctx, this);
+            if (this.wetaEffects) this.wetaEffects.forEach(e => e.draw(ctx));
             return;
         } else if (this.form === 'CENTIPEDE') {
             this.drawCentipede(ctx);
@@ -2352,9 +2348,17 @@ export class Insect {
             this.triggerMantisAttack(prey.pos);
             return true;
         } else if (this.form === 'SCORPION') {
-            // No custom logic -> Generic Lunge
-            this.predationState = 'lunging';
-            this.lungeTimer = 10;
+            // Trigger Charge Attack
+            this.triggerScorpionAttack();
+            // Don't set generic 'lunging', let the customized attack state handle it.
+            // We store onConsumePrey, which triggerScorpionAttack/updateScorpion will use.
+            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
+            return true;
+
+        } else if (this.form === 'GIANT_WETA') {
+            this.triggerGiantWetaBite();
+            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
+            return true;
 
         } else if (this.form === 'STICK_INSECT') {
             this.predationState = 'attacking';
@@ -2889,9 +2893,9 @@ export class Insect {
         // Assuming input has mouseDown or similar.
         // Also support 'predation' triggered by collision (triggerPredation).
 
-        if (input && input.mouseDown && this.scorpionAttackState === 'none') {
-            this.triggerScorpionAttack();
-        }
+        // if (input && input.mouseDown && this.scorpionAttackState === 'none') {
+        //     this.triggerScorpionAttack();
+        // }
 
         if (this.scorpionAttackState === 'windup') {
             speedMult = 0.5;
@@ -3097,6 +3101,105 @@ export class Insect {
             this.scorpionAttackState = 'windup';
             this.scorpionAttackTimer = 15;
             // Optionally clear prey?
+        }
+    }
+
+    updateGiantWeta(input) {
+        const s = this.scale;
+
+        // lazy init effects
+        if (!this.wetaEffects) this.wetaEffects = [];
+
+        if (this.wetaState === 'biting') {
+            this.wetaBiteProgress += 0.03;
+
+            // Movement Slowdown
+            if (this.vel.mag() > 0) this.vel = this.vel.mult(0.5);
+
+            // Lunge Offset Calculation
+            if (this.wetaBiteProgress < 0.4) {
+                let t = this.wetaBiteProgress / 0.4;
+                this.wetaLungeOffset = Math.sin(t * Math.PI / 2) * 30 * s;
+                // Lunge Movement (Body Surge)
+                if (this.wetaBiteProgress > 0.2) {
+                    let dir = new Vec2(Math.cos(this.angle), Math.sin(this.angle));
+                    this.vel = this.vel.add(dir.mult(0.8 * s));
+                }
+            } else {
+                let t = (this.wetaBiteProgress - 0.4) / 0.6;
+                this.wetaLungeOffset = 30 * s * (1 - t);
+            }
+
+            // Impact Event (0.4)
+            if (this.wetaBiteProgress >= 0.4 && !this.wetaHasFiredBite) {
+                this.wetaHasFiredBite = true;
+
+                // Effects
+                let dirVec = new Vec2(Math.cos(this.angle), Math.sin(this.angle));
+                let mouthPos = this.pos.add(dirVec.mult((60 + 30) * s));
+
+                // Flash
+                this.wetaEffects.push(new WetaEffect(mouthPos.clone(), new Vec2(0, 0), 10, 10 * s, 'rgba(255, 255, 200, 0.9)', 'impact_flash'));
+
+                // Shockwave
+                this.wetaEffects.push(new WetaEffect(mouthPos.clone(), dirVec.mult(2 * s), 15, 5 * s, 'rgba(200, 255, 200, 0.6)', 'shockwave'));
+
+                // Debris
+                for (let i = 0; i < 8; i++) {
+                    let angleVar = (Math.random() - 0.5) * 1.5;
+                    let speedVar = (3 + Math.random() * 8) * s;
+                    let pVel = dirVec.rotate(angleVar).mult(speedVar);
+                    this.wetaEffects.push(new WetaEffect(mouthPos.clone(), pVel, 25 + Math.random() * 15, (2 + Math.random() * 5) * s, 'rgba(120, 220, 60, 0.9)', 'bite_debris'));
+                }
+
+                // Consume Prey
+                if (this.onConsumePrey && this.heldPrey) {
+                    this.onConsumePrey(mouthPos);
+                }
+            }
+
+            if (this.wetaBiteProgress >= 1) {
+                this.wetaState = 'idle';
+                this.heldPrey = null;
+                this.onConsumePrey = null;
+                this.wetaLungeOffset = 0;
+            }
+        }
+        else {
+            this.wetaState = 'idle';
+            this.wetaLungeOffset = 0;
+        }
+
+        // --- Update Components ---
+        let attackInfo = {
+            isAttacking: this.wetaState === 'attacking',
+            progress: 0,
+            isBiting: this.wetaState === 'biting',
+            biteProgress: this.wetaBiteProgress
+        };
+
+        // Effects Update
+        this.wetaEffects.forEach(e => e.update());
+        this.wetaEffects = this.wetaEffects.filter(e => e.active);
+
+        // Legs Update
+        let lungeVec = new Vec2(this.wetaLungeOffset || 0, 0).rotate(this.angle);
+        let effectivePos = this.pos.add(lungeVec);
+
+        this.wetaLegs.forEach(leg => leg.update(effectivePos, this.angle, this.vel, this.maxSpeed, s, attackInfo));
+
+        // Antennae
+        this.wetaAntennae.forEach((ant, i) => {
+            let side = (i === 0) ? -1 : 1;
+            ant.update(effectivePos, this.angle, side);
+        });
+    }
+
+    triggerGiantWetaBite() {
+        if (this.wetaState !== 'biting' && this.wetaState !== 'attacking') {
+            this.wetaState = 'biting';
+            this.wetaBiteProgress = 0;
+            this.wetaHasFiredBite = false;
         }
     }
 

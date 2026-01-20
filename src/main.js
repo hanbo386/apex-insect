@@ -152,7 +152,7 @@ player.onEvolve = (formName, stage) => {
     // Check for Stage 5 (Spider) -> World Reset
     // World Reset Logic (Prestige)
     // Occurs at Stage 5 (Spider) and Stage 9 (Rhino Beetle)
-    if ((stage === 5 || stage === 9) && !player.hasResetWorld) {
+    if ((stage === 5 || stage === 8 || stage === 12) && !player.hasResetWorld) {
         player.hasResetWorld = true;
 
         // 1. Popup Prompt
@@ -170,7 +170,8 @@ player.onEvolve = (formName, stage) => {
             // We want the player to visually reset to 1.0.
             // So we set the divisor to the canonical start scale of the current stage.
             let resetBaseScale = 6.5; // Default Stage 5 (Spider)
-            if (stage === 9) resetBaseScale = 60.0; // Stage 9 (Stick Insect)
+            if (stage === 8) resetBaseScale = 35.0; // Stage 8 (Giant Weta)
+            if (stage === 12) resetBaseScale = 325.0; // Stage 12 (Scorpion)
 
             // Update Divisor (Absolute assignment)
             player.worldScaleDivisor = resetBaseScale;
@@ -194,6 +195,10 @@ player.onEvolve = (formName, stage) => {
 
             texts.push(new FloatingText(player.pos.x, player.pos.y - 80, `新世界开启! (Tier ${player.worldTier})`, '#FFD700', 60, 5.0));
 
+            // Restore Titan Quest Prompt for Scorpion
+            if (stage === 12 && !player.titanQuest.active && !player.titanQuest.complete) {
+                document.getElementById('titan-modal').style.display = 'flex';
+            }
         }, 100);
 
         return;
@@ -201,7 +206,7 @@ player.onEvolve = (formName, stage) => {
 
     // Reset the flag if we are NOT 5 or 9
     // This allows it to trigger again for the next threshold
-    if (stage !== 5 && stage !== 9) {
+    if (stage !== 5 && stage !== 8 && stage !== 12) {
         player.hasResetWorld = false;
     }
 

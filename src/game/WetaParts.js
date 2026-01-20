@@ -65,13 +65,11 @@ export class WetaLeg {
         this.footPos = new Vec2(0, 0);
         this.targetPos = new Vec2(0, 0);
         this.startStepPos = new Vec2(0, 0);
-        this.stepProgress = 0;
         this.isStepping = false;
         this.gaitOffset = Math.random();
     }
 
     solveIK(bodyPos, bodyAngle, scale = 1.0) {
-        // Adjust for scale
         let scaledOffset = this.anchorOffset.mult(scale);
         let scaledL1 = this.l1 * scale;
         let scaledL2 = this.l2 * scale;
@@ -91,14 +89,10 @@ export class WetaLeg {
 
         let baseAngle = Math.atan2(this.footPos.y - shoulder.y, this.footPos.x - shoulder.x);
 
-        // --- Bend Direction ---
         let bendDir = this.side;
-
         if (this.index === 0) {
-            // Front Leg: Bend forward
             bendDir = this.side;
         } else {
-            // Mid/Back Leg: Bend backward
             bendDir = -this.side;
         }
 
@@ -110,41 +104,43 @@ export class WetaLeg {
         return { shoulder, knee: new Vec2(kneeX, kneeY), foot: this.footPos };
     }
 
-    update(bodyPos, bodyAngle, velocity, speed, scale = 1.0) {
+    // New Update Signature to accept attack state
+    update(bodyPos, bodyAngle, velocity, speed, scale, attackInfo) {
+        // 1. Attack Overrides
+        if (attackInfo) {
+            if (attackInfo.isAttacking && this.index === 2) {
+                this.handleKick(bodyPos, bodyAngle, attackInfo.progress, scale);
+                return;
+            }
+            if (attackInfo.isBiting && this.index === 0) {
+                this.handleBiteGrapple(bodyPos, bodyAngle, attackInfo.biteProgress, scale);
+                return;
+            }
+        }
+
         let speedFactor = velocity.mag() * 15 * scale;
-        // Cap speedFactor to prevent legs exploding out
         if (speedFactor > 60 * scale) speedFactor = 60 * scale;
 
         let targetLocal = new Vec2(0, 0);
 
-        // --- Configuration ---
         if (this.index === 0) {
             targetLocal = new Vec2(65 * scale + speedFactor, this.side * 25 * scale);
         } else if (this.index === 1) {
-            // Move mid legs slightly forward prevent drag look
             targetLocal = new Vec2(-25 * scale, this.side * 80 * scale);
         } else if (this.index === 2) {
-            // Move back legs slightly forward
             targetLocal = new Vec2(-140 * scale, this.side * 60 * scale);
         }
 
         let idealGlobal = bodyPos.add(targetLocal.rotate(bodyAngle));
         let distToTarget = this.footPos.dist(idealGlobal);
 
-        // --- Movement Logic ---
+        let stepThreshold = (this.index === 2 ? 60 : 45) * scale;
 
-        // 1. Thresholds - Reduced by ~20%
-        let stepThreshold = 45 * scale;
-        if (this.index === 2) stepThreshold = 60 * scale;
-
-        // 2. Check Stretch
         let scaledOffset = this.anchorOffset.mult(scale);
         let shoulderOffset = scaledOffset.rotate(bodyAngle);
         let shoulderPos = bodyPos.add(shoulderOffset);
         let currentLegLength = this.footPos.dist(shoulderPos);
         let maxLegLength = (this.l1 + this.l2) * scale;
-
-        // Stricter stretch check (0.96 -> 0.90) to force step before full extend
         let isStretched = currentLegLength > maxLegLength * 0.90;
 
         if (!this.isStepping && (distToTarget > stepThreshold || isStretched)) {
@@ -152,37 +148,78 @@ export class WetaLeg {
             this.stepProgress = 0;
             this.startStepPos = this.footPos.copy();
 
-            // 3. Prediction
             let predFactor = this.index === 2 ? 1.0 : 0.8;
-
             let prediction = velocity.mag() > 0.1 ? velocity.normalize().mult(stepThreshold * predFactor) : new Vec2(0, 0);
 
             this.targetPos = idealGlobal.add(prediction);
-            // Randomness
             this.targetPos.x += (Math.random() - 0.5) * 2 * scale;
             this.targetPos.y += (Math.random() - 0.5) * 2 * scale;
         }
 
         if (this.isStepping) {
-            // 4. Step Progress
             this.stepProgress += 0.25;
-
             if (this.stepProgress >= 1) {
                 this.stepProgress = 1;
                 this.isStepping = false;
                 this.footPos = this.targetPos;
             } else {
                 let t = this.stepProgress;
-                // Lift is calculated but ignored in 2D top-down reference logic for actual position
                 let liftHeight = (this.index === 2 ? 40 : 20) * scale;
-                let lift = Math.sin(t * Math.PI) * liftHeight;
+                let lift = Math.sin(t * Math.PI) * liftHeight; // Not used in top-down pos but logic kept
 
                 let currentX = this.startStepPos.x + (this.targetPos.x - this.startStepPos.x) * t;
                 let currentY = this.startStepPos.y + (this.targetPos.y - this.startStepPos.y) * t;
-
                 this.footPos = new Vec2(currentX, currentY);
             }
         }
+    }
+
+    handleKick(bodyPos, bodyAngle, progress, s) {
+        this.isStepping = false;
+        let localTarget;
+
+        if (progress < 0.3) {
+            let t = progress / 0.3;
+            t = 1 - Math.pow(1 - t, 2);
+            localTarget = new Vec2(-80 * s, this.side * 40 * s);
+        } else if (progress < 0.5) {
+            let t = (progress - 0.3) / 0.2;
+            t = 1 - Math.pow(1 - t, 3);
+            localTarget = new Vec2(-280 * s, this.side * 120 * s);
+        } else {
+            let t = (progress - 0.5) / 0.5;
+            let kickEndPos = new Vec2(-280 * s, this.side * 120 * s);
+            let normalStandPos = new Vec2(-140 * s, this.side * 60 * s); // Matches idle
+            let lx = kickEndPos.x + (normalStandPos.x - kickEndPos.x) * t;
+            let ly = kickEndPos.y + (normalStandPos.y - kickEndPos.y) * t;
+            localTarget = new Vec2(lx, ly);
+        }
+        this.footPos = bodyPos.add(localTarget.rotate(bodyAngle));
+    }
+
+    handleBiteGrapple(bodyPos, bodyAngle, progress, s) {
+        this.isStepping = false;
+        let localTarget;
+
+        if (progress < 0.4) {
+            // Prepare / Open
+            let prepX = 90 * s;
+            let prepY = this.side * 45 * s;
+            localTarget = new Vec2(prepX, prepY);
+        } else if (progress < 0.6) {
+            // Grab
+            localTarget = new Vec2(70 * s, this.side * 10 * s);
+        } else {
+            // Return
+            let t = (progress - 0.6) / 0.4;
+            let grappleEnd = new Vec2(70 * s, this.side * 10 * s);
+            let normalPos = new Vec2(65 * s, this.side * 25 * s);
+            let lx = grappleEnd.x + (normalPos.x - grappleEnd.x) * t;
+            let ly = grappleEnd.y + (normalPos.y - grappleEnd.y) * t;
+            localTarget = new Vec2(lx, ly);
+        }
+
+        this.footPos = bodyPos.add(localTarget.rotate(bodyAngle));
     }
 
     draw(ctx, bodyPos, bodyAngle, scale = 1.0) {
@@ -227,7 +264,6 @@ export class WetaLeg {
         ctx.strokeStyle = '#271915';
         ctx.lineWidth = 1.5 * scale;
         let dir = end.sub(start);
-        let len = dir.mag();
         let normal = new Vec2(-dir.y, dir.x).normalize();
 
         for (let i = 1; i < count; i++) {
@@ -245,33 +281,51 @@ export class WetaLeg {
 export function drawGiantWeta(ctx, insect) {
     const s = insect.scale;
 
+    // Extract State
+    const isAttacking = insect.wetaState === 'attacking';
+    const isBiting = insect.wetaState === 'biting';
+    const attackProgress = insect.wetaAttackTimer ? (1.0 - insect.wetaAttackTimer / 20) : 0; // Approx
+    // Wait, Insect.js will manage timers. WetaParts should just Receive state.
+    // We'll read these from insect object, assuming they are added in Insect.js update.
+    const biteVal = insect.wetaBiteProgress || 0;
+    const lungeOffset = insect.wetaLungeOffset || 0;
+
     ctx.save();
 
-    // Draw Legs (Handled by main draw loop calling leg.draw? Or here?)
-    // In the User Reference: weta.draw() calls legs.draw() then body then antennae.
-    // In Insect.js draw loop: we usually delegate to specific draw functions.
-    // Let's do it here to follow reference structure.
+    // Draw Legs
+    // Legs need to be drawn relative to effective body pos if lunging
+    // Note: Insect.js updateGiantWeta calls leg.update with effectivePos.
+    // The leg.draw needs the same effectivePos or standard bodyPos?
+    // User ref: leg.draw(ctx, effectivePos, angle).
+    // So we must calculate effectivePos here too.
+
+    let lungeVec = new Vec2(lungeOffset, 0).rotate(insect.angle);
+    let effectivePos = insect.pos.add(lungeVec);
 
     if (insect.wetaLegs) {
-        insect.wetaLegs.forEach(leg => leg.draw(ctx, insect.pos, insect.angle, s));
+        insect.wetaLegs.forEach(leg => leg.draw(ctx, effectivePos, insect.angle, s));
     }
 
-    // Antennae (Global draw, not affected by body rotation)
+    // Antennae
     if (insect.wetaAntennae) {
         insect.wetaAntennae.forEach(ant => ant.draw(ctx));
     }
 
-    // Body
+    // Body Transformation
     ctx.translate(insect.pos.x, insect.pos.y);
     ctx.rotate(insect.angle);
+
+    // Apply Lunge Translation
+    ctx.translate(lungeOffset, 0);
+
     ctx.scale(s, s);
 
-    drawBodyInternal(ctx);
+    drawBodyInternal(ctx, isAttacking, attackProgress, isBiting, biteVal);
 
     ctx.restore();
 }
 
-function drawBodyInternal(ctx) {
+function drawBodyInternal(ctx, isAttacking, attackProgress, isBiting, biteProgress) {
     const colorShell = '#3E2723';
     const colorHighlight = '#5D4037';
     const colorSegment = '#271915';
@@ -302,14 +356,21 @@ function drawBodyInternal(ctx) {
     ctx.stroke();
 
     // --- Abdomen ---
+    let squeeze = 0;
+    if (isAttacking && attackProgress < 0.3) {
+        squeeze = Math.sin(attackProgress / 0.3 * Math.PI) * 3;
+    }
+    if (isBiting) {
+        squeeze = -Math.sin(biteProgress * Math.PI) * 2;
+    }
+
     for (let i = 0; i < 7; i++) {
-        let xOff = -15 - (i * 10);
+        let xOff = -15 - (i * 10) + squeeze;
         let width = 26 - (i * 2.5);
         let height = 32 - (i * 3);
 
         ctx.fillStyle = colorSegment;
         ctx.beginPath();
-        // ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle)
         ctx.ellipse(xOff, 0, width + 1, height + 1, 0, 0, Math.PI * 2);
         ctx.fill();
 
@@ -322,7 +383,6 @@ function drawBodyInternal(ctx) {
     // --- Thorax ---
     ctx.fillStyle = colorShell;
     ctx.beginPath();
-    // RoundRect shim or usage
     if (ctx.roundRect) {
         ctx.roundRect(-20, -24, 30, 48, 6);
     } else {
@@ -361,27 +421,139 @@ function drawBodyInternal(ctx) {
     ctx.ellipse(50, -3, 6, 4, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Mandibles
+    // --- Mandibles Logic ---
+    let mandibleAngle = 0;
+    if (isBiting) {
+        // 0-0.4: Open
+        if (biteProgress < 0.4) {
+            let t = biteProgress / 0.4;
+            mandibleAngle = -Math.PI * 0.4 * t;
+        }
+        // 0.4-0.5: Snap
+        else if (biteProgress < 0.5) {
+            mandibleAngle = Math.PI * 0.2;
+        }
+        // Recover
+        else {
+            let t = (biteProgress - 0.5) / 0.5;
+            mandibleAngle = Math.PI * 0.2 * (1 - t);
+        }
+    }
+
+    // Left Mandible
+    ctx.save();
+    ctx.translate(56, -3);
+    ctx.rotate(mandibleAngle);
     ctx.fillStyle = '#1a100e';
     ctx.beginPath();
-    ctx.moveTo(56, -5);
-    ctx.lineTo(64, -2);
-    ctx.lineTo(56, 0);
+    ctx.moveTo(0, -3); ctx.lineTo(20, 2); ctx.lineTo(0, 5);
     ctx.fill();
+    // Highlight
+    ctx.strokeStyle = '#5D4037';
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(56, 5);
-    ctx.lineTo(64, 2);
-    ctx.lineTo(56, 0);
+    ctx.moveTo(2, 0); ctx.lineTo(16, 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // Right Mandible
+    ctx.save();
+    ctx.translate(56, 3);
+    ctx.rotate(-mandibleAngle);
+    ctx.fillStyle = '#1a100e';
+    ctx.beginPath();
+    ctx.moveTo(0, 3); ctx.lineTo(20, -2); ctx.lineTo(0, -5);
     ctx.fill();
+    // Highlight
+    ctx.strokeStyle = '#5D4037';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(2, 0); ctx.lineTo(16, -2);
+    ctx.stroke();
+    ctx.restore();
 
     // Eyes
     ctx.fillStyle = 'black';
     ctx.beginPath(); ctx.arc(52, -7, 2.5, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(52, 7, 2.5, 0, Math.PI * 2); ctx.fill();
-
     // Pronotum Highlight
     ctx.fillStyle = 'rgba(255,255,255,0.1)';
     ctx.beginPath();
     ctx.ellipse(28, -6, 12, 6, -0.5, 0, Math.PI * 2);
     ctx.fill();
+}
+
+/**
+ * Weta Effect (Shockwaves, Dust, debris)
+ */
+export class WetaEffect {
+    constructor(pos, vel, life, size, color, type = 'dust') {
+        this.pos = pos;
+        this.vel = vel;
+        this.life = life;
+        this.maxLife = life;
+        this.size = size;
+        this.color = color;
+        this.type = type;
+        this.active = true;
+    }
+
+    update() {
+        this.pos = this.pos.add(this.vel);
+        this.life--;
+
+        if (this.type === 'dust') {
+            this.vel = this.vel.mult(0.9);
+            this.size *= 0.96;
+        } else if (this.type === 'line') {
+            this.vel = this.vel.mult(0.95);
+            this.size *= 0.8;
+        } else if (this.type === 'shockwave') {
+            this.size += 2;
+        } else if (this.type === 'bite_debris') {
+            this.vel = this.vel.mult(0.92);
+            this.size *= 0.95;
+        } else if (this.type === 'impact_flash') {
+            this.size += 5;
+            this.life -= 2;
+        }
+
+        if (this.life <= 0) this.active = false;
+    }
+
+    draw(ctx) {
+        if (!this.active) return;
+
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
+
+        if (this.type === 'line') {
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = this.size;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(this.pos.x, this.pos.y);
+            let tail = this.pos.sub(this.vel.mult(3));
+            ctx.lineTo(tail.x, tail.y);
+            ctx.stroke();
+        } else if (this.type === 'shockwave') {
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI * 2);
+            ctx.stroke();
+        } else if (this.type === 'impact_flash') {
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
 }
