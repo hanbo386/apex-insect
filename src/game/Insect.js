@@ -166,6 +166,9 @@ export class Insect {
         this.scorpionSegments = [];
         this.scorpionStingProgress = 0;
         this.scorpionStingTarget = 0;
+        this.scorpionAttackState = 0;
+        this.scorpionAttackTimer = 0;
+        this.scorpionEffects = [];
 
         // --- TITAN Properties ---
         this.titanLegs = [];
@@ -2344,6 +2347,7 @@ export class Insect {
             this.predationState = 'attacking';
             this.tarantulaAttackTimer = TARANTULA_SETTINGS.attackDuration;
             this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
+            // Don't consume yet, wait for lunge apex in updateTarantula
             return true;
         }
         // Note: Removed forced 'attacking' state here.
@@ -2358,20 +2362,31 @@ export class Insect {
         } else if (this.form === 'MANTIS' && this.mantisLegs) {
             this.triggerMantisAttack(prey.pos);
             return true;
+        } else if (this.form === 'SCORPION') {
+            this.triggerScorpionAttack(prey.pos);
+            return true;
         } else if (this.form === 'STICK_INSECT') {
             this.predationState = 'attacking';
             // Align to prey
             this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
-            // ... (Stick Insect logic)
+            // Trigger Front Legs Attack
+            if (this.stickLegs) {
+                this.stickLegs.forEach(leg => {
+                    if (leg.offsetIndex === 0) {
+                        leg.isAttacking = true;
+                        leg.attackProgress = 0;
+                    }
+                });
+            }
         } else if (this.form === 'COCKROACH') {
             this.predationState = 'attacking';
             // Align to prey
             this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
-            // Burst logic will trigger in updateCockroach because state is now 'attacking'
+            this.wasAttacking = false; // Ensure trigger fires in updateCockroach
         } else {
             // Generic Lunge
             this.predationState = 'lunging';
-            this.lungeTimer = 10; // 10 Frames total lunge
+            this.lungeTimer = 10;
         }
 
         return true;
@@ -2395,6 +2410,16 @@ export class Insect {
                 this.heldPrey.pos.x += (targetPos.x - this.heldPrey.pos.x) * 0.4;
                 this.heldPrey.pos.y += (targetPos.y - this.heldPrey.pos.y) * 0.4;
                 this.heldPrey.angle = this.angle + Math.PI / 2; // Orient prey crosswise
+            }
+            return;
+        } else if (this.predationState === 'attacking' && this.form === 'SCORPION') {
+            if (this.heldPrey) {
+                const s = this.scale;
+                const holdDist = 80 * s;
+                const targetPos = this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(holdDist));
+                this.heldPrey.pos.x += (targetPos.x - this.heldPrey.pos.x) * 0.2;
+                this.heldPrey.pos.y += (targetPos.y - this.heldPrey.pos.y) * 0.2;
+                this.heldPrey.angle = this.angle + Math.PI / 2;
             }
             return;
         }
@@ -2884,6 +2909,150 @@ export class Insect {
         this.tarantulaLegs.forEach(l => l.update(this.pos, this.angle, moving, this.speed / s, this.stepGroup, this.tarantulaAttackTimer));
     }
 
+    triggerScorpionAttack(target = null) {
+        if (this.scorpionAttackState === 0) {
+            this.scorpionAttackState = 1; // CHARGE / WINDUP
+            this.scorpionAttackTimer = 15;
+            this.predationState = 'attacking';
+        }
+    }
+
+    updateScorpion(input) {
+        const s = this.scale;
+
+        // --- State Machine ---
+        let speedMult = 1.0;
+        let stingTarget = 0;
+
+        if (this.scorpionAttackState === 1) { // WINDUP
+            speedMult = 0.5;
+            stingTarget = 0.2;
+
+            // Backup
+            const backDir = new Vec2(Math.cos(this.angle + Math.PI), Math.sin(this.angle + Math.PI));
+            this.vel = this.vel.add(backDir.mult(0.2 * s));
+
+            this.scorpionAttackTimer--;
+            if (this.scorpionAttackTimer <= 0) {
+                this.scorpionAttackState = 2; // STRIKE
+                this.scorpionAttackTimer = 8;
+
+                // Lunge
+                const fwdDir = new Vec2(Math.cos(this.angle), Math.sin(this.angle));
+                this.vel = fwdDir.mult(15 * s);
+
+                // Effects
+                const head = this.scorpionSegments[0];
+                if (head) {
+                    const impactPos = head.pos.add(fwdDir.mult(50 * s));
+                    this.scorpionEffects.push({
+                        type: 'shockwave', x: impactPos.x, y: impactPos.y,
+                        radius: 5 * s, maxRadius: 50 * s, life: 1.0, color: '220, 20, 20'
+                    });
+                }
+
+                // Eat Logic
+                if (this.heldPrey && this.onConsumePrey) {
+                    this.onConsumePrey(this.heldPrey.pos);
+                    this.heldPrey = null;
+                    this.onConsumePrey = null;
+                }
+            }
+        } else if (this.scorpionAttackState === 2) { // STRIKE
+            stingTarget = 1.0;
+            speedMult = 0;
+            this.scorpionAttackTimer--;
+            if (this.scorpionAttackTimer <= 0) {
+                this.scorpionAttackState = 3; // RECOVER
+                this.scorpionAttackTimer = 20;
+            }
+        } else if (this.scorpionAttackState === 3) { // RECOVER
+            speedMult = 0.3;
+            stingTarget = 0.0;
+            this.scorpionAttackTimer--;
+            if (this.scorpionAttackTimer <= 0) {
+                this.scorpionAttackState = 0;
+                this.predationState = 'idle';
+            }
+        }
+
+        // --- Segments Body IK (Tail) ---
+        if (this.scorpionSegments.length > 0) {
+            this.scorpionSegments[0].pos = this.pos.clone();
+            this.scorpionSegments[0].angle = this.angle;
+        }
+
+        // Sting Animation
+        let stingSmooth = 0.1;
+        if (this.scorpionAttackState === 2) stingSmooth = 0.6;
+        else if (this.scorpionAttackState === 3) stingSmooth = 0.2;
+
+        this.scorpionStingProgress += (stingTarget - this.scorpionStingProgress) * stingSmooth;
+
+        for (let i = 1; i < this.scorpionSegments.length; i++) {
+            const seg = this.scorpionSegments[i];
+            const prev = this.scorpionSegments[i - 1];
+            // Spacing
+            const spacing = (seg.type === 'tail' ? 12 : 6) * s;
+
+            if (seg.type === 'tail') {
+                const tailIndex = i - 9;
+                const hips = this.scorpionSegments[8] || prev;
+                const lowerBody = this.scorpionSegments[7] || this.scorpionSegments[6] || hips;
+
+                let hipsBackDir = hips.pos.sub(lowerBody.pos).normalize();
+                if (hipsBackDir.mag() === 0) hipsBackDir = new Vec2(Math.cos(hips.angle + Math.PI / 2), Math.sin(hips.angle + Math.PI / 2));
+
+                const distBack = (15 + tailIndex * 12) * s;
+                const time = Date.now() / 1000;
+                const sway = Math.sin(time + tailIndex * 0.5) * 2 * s;
+
+                const rightDir = new Vec2(-hipsBackDir.y, hipsBackDir.x);
+
+                let restTarget = hips.pos.add(hipsBackDir.mult(distBack)).add(rightDir.mult(sway));
+
+                // Attack Pose
+                const head = this.scorpionSegments[0];
+                const attackDir = new Vec2(Math.cos(head.angle), Math.sin(head.angle));
+                const attackDist = (30 + tailIndex * 12) * s;
+                const attackTarget = head.pos.add(attackDir.mult(attackDist));
+
+                // Blend
+                let targetPos = new Vec2(
+                    restTarget.x * (1 - this.scorpionStingProgress) + attackTarget.x * this.scorpionStingProgress,
+                    restTarget.y * (1 - this.scorpionStingProgress) + attackTarget.y * this.scorpionStingProgress
+                );
+
+                const muscleStiffness = 0.5;
+                seg.pos = seg.pos.add(targetPos.sub(seg.pos).mult(muscleStiffness));
+
+                let constraintVec = seg.pos.sub(prev.pos);
+                if (constraintVec.mag() === 0) constraintVec = hipsBackDir.clone();
+                constraintVec = constraintVec.normalize().mult(spacing);
+                seg.pos = prev.pos.add(constraintVec);
+
+                seg.angle = Math.atan2(prev.pos.y - seg.pos.y, prev.pos.x - seg.pos.x) + Math.PI / 2;
+
+            } else {
+                let dir = seg.pos.sub(prev.pos);
+                if (dir.mag() === 0) dir = new Vec2(Math.cos(prev.angle + Math.PI), Math.sin(prev.angle + Math.PI));
+                dir = dir.normalize().mult(spacing);
+                seg.pos = prev.pos.add(dir);
+                seg.angle = Math.atan2(prev.pos.y - seg.pos.y, prev.pos.x - seg.pos.x) + Math.PI / 2;
+            }
+        }
+
+        // Update Legs & Claws
+        if (this.scorpionLegs) this.scorpionLegs.forEach(leg => {
+            leg.updateScale(s);
+            leg.update(this.pos, this.angle, this.vel, this.scorpionAttackState > 0);
+        });
+        if (this.scorpionClaws) this.scorpionClaws.forEach(claw => {
+            claw.updateScale(s);
+            claw.update(this.pos, this.angle, this.vel, this.scorpionAttackState);
+        });
+    }
+
     drawTarantula(ctx) {
         const s = this.scale;
 
@@ -3348,6 +3517,37 @@ export class Insect {
     }
 
     drawScorpion(ctx) {
+        const s = this.scale;
+
+        // 0. Effects (Shockwaves) - Draw Below
+        if (this.scorpionEffects) {
+            for (let i = this.scorpionEffects.length - 1; i >= 0; i--) {
+                const fx = this.scorpionEffects[i];
+                if (fx.type === 'shockwave') {
+                    ctx.save();
+                    if (fx.life > 0.5) {
+                        const alpha = (fx.life - 0.5) * 2;
+                        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                        ctx.beginPath(); ctx.arc(fx.x, fx.y, fx.radius * 0.5, 0, Math.PI * 2); ctx.fill();
+                    }
+                    ctx.beginPath(); ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(${fx.color}, ${fx.life})`;
+                    ctx.lineWidth = 12 * s * fx.life; ctx.stroke();
+                    ctx.beginPath(); ctx.arc(fx.x, fx.y, fx.radius * 0.75, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(${fx.color}, ${fx.life * 0.6})`;
+                    ctx.lineWidth = 8 * s * fx.life; ctx.stroke();
+                    ctx.beginPath(); ctx.arc(fx.x, fx.y, fx.radius * 0.5, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(255, 100, 100, ${fx.life * 0.8})`;
+                    ctx.lineWidth = 3 * s * fx.life; ctx.stroke();
+                    ctx.restore();
+
+                    fx.radius += (fx.maxRadius - fx.radius) * 0.2;
+                    fx.life -= 0.06;
+                    if (fx.life <= 0) this.scorpionEffects.splice(i, 1);
+                }
+            }
+        }
+
         // 1. Shadows
         ctx.fillStyle = 'rgba(0,0,0,0.15)';
         this.scorpionSegments.forEach(seg => {
@@ -3366,26 +3566,43 @@ export class Insect {
         this.scorpionLegs.forEach(leg => leg.draw(ctx));
         this.scorpionClaws.forEach(claw => claw.draw(ctx));
 
-        // 3. Body (Reverse Order)
-        // Ref: 9->3 (Body), 2->0 (Head), 10->End (Tail)
+        // 3. Body
         for (let i = 9; i >= 3; i--) this.drawScorpionSegment(ctx, i);
         for (let i = 2; i >= 0; i--) this.drawScorpionSegment(ctx, i);
         for (let i = 10; i < this.scorpionSegments.length; i++) this.drawScorpionSegment(ctx, i);
 
-        // 4. Stinger (Last Segment)
+        // 4. Stinger
         if (this.scorpionSegments.length > 0) {
             const last = this.scorpionSegments[this.scorpionSegments.length - 1];
-            const s = this.scale;
 
             ctx.save();
             ctx.translate(last.pos.x, last.pos.y);
             ctx.rotate(last.angle);
 
             ctx.fillStyle = '#8a2020';
-            ctx.beginPath(); ctx.arc(0, 4 * s, 6 * s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.arc(0, 4 * s, 7 * s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 
-            ctx.beginPath(); ctx.moveTo(0, 10 * s); ctx.quadraticCurveTo(0, 20 * s, 2 * s, 25 * s);
-            ctx.strokeStyle = '#000'; ctx.lineWidth = 2 * s; ctx.stroke();
+            if (this.scorpionAttackState === 2) {
+                ctx.shadowColor = 'red';
+                ctx.shadowBlur = 15 * s;
+            }
+
+            ctx.fillStyle = '#0f0505';
+            ctx.beginPath();
+            ctx.moveTo(-4 * s, 9 * s);
+            ctx.lineTo(4 * s, 9 * s);
+            ctx.bezierCurveTo(55 * s, 15 * s, 45 * s, 75 * s, 0, 80 * s);
+            ctx.bezierCurveTo(15 * s, 75 * s, 35 * s, 20 * s, -4 * s, 9 * s);
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 1 * s;
+            ctx.moveTo(0, 12 * s);
+            ctx.quadraticCurveTo(40 * s, 45 * s, 2 * s, 75 * s);
+            ctx.stroke();
+
+            ctx.shadowBlur = 0;
             ctx.restore();
         }
 
