@@ -103,7 +103,7 @@ function updateUI() {
 }
 
 // Input handling
-const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false, ShiftLeft: false, ShiftRight: false };
+const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false, ShiftLeft: false, ShiftRight: false, Space: false };
 
 window.addEventListener('keydown', e => {
     if (keys.hasOwnProperty(e.code)) keys[e.code] = true;
@@ -423,7 +423,8 @@ function gameLoop() {
         down: keys.KeyS || keys.ArrowDown,
         left: keys.KeyA || keys.ArrowLeft,
         right: keys.KeyD || keys.ArrowRight,
-        shift: keys.ShiftLeft || keys.ShiftRight
+        shift: keys.ShiftLeft || keys.ShiftRight,
+        attack: keys.Space
     };
 
     player.update(input);
@@ -544,6 +545,7 @@ function gameLoop() {
                         }
                     }
                 }
+                if (c.isDead) continue; // Skip updates for doomed creeps
                 // 2. PREY BEHAVIOR (Lower Stage)
                 else if (c.evolutionStage < player.evolutionStage && distToPlayer < visionRange) {
                     // Flee!
@@ -741,6 +743,10 @@ function gameLoop() {
             // Attempt to start predation animation
             if (player.startPredation(c, (pos) => {
                 // Callback when eat logic triggers (Apex of lunge or Mouth reach)
+                // Remove creep from world NOW (delayed).
+                let idx = creeps.indexOf(c);
+                if (idx !== -1) creeps.splice(idx, 1);
+
                 // XP Calculation Fixed: Use Evolution Stage power, not Scale (which shrinks on Reset)
                 let stagePower = c.evolutionStage !== undefined ? Math.pow(1.5, c.evolutionStage) : 0;
                 let xpGain = c.isRival ? Math.floor(20 * stagePower) : (1 + Math.floor(c.size * (c.scale || 1)));
@@ -756,7 +762,21 @@ function gameLoop() {
                 // Remove creep from world immediately.
                 // For spider, it's visually held. For lunge, it's abstractly "doomed" or we could hide it?
                 // For lunge, simple splice is fine, it disappears and then particles appear at apex.
-                creeps.splice(i, 1);
+                // creeps.splice(i, 1); 
+                // EDIT: Do NOT remove immediately. Let consumeCallback handle removal or rely on visual cues.
+                // Actually, if we don't remove it, it stays in the list and might collide again?
+                // But startPredation returns FALSE if busy.
+                // The issue is: If we don't splice here, it renders.
+                // If we splice here, it disappears.
+                // For Tarantula, we WANT it to stay rendered until the LUNGE hits.
+                // So we must splice INSIDE the callback. 
+                // But splice requires index 'i'. 'i' changes if other things die.
+                // Robust solution: Mark creep as 'dead/eaten' and filter later? Or splicing object directly?
+                // creeps is an array. creeps.indexOf(c) is safer.
+
+                // We will move the splice to the callback.
+                // BUT we must effectively disable the creep so it doesn't move or collide again.
+                c.isDead = true; // Flag it.
             }
             continue;
         }

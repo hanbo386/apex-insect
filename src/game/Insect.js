@@ -5,12 +5,13 @@ import { SpiderLeg, SPIDER_CONFIG } from './SpiderParts.js';
 import { MantisLeg } from './MantisParts.js';
 import { CricketLeg } from './CricketParts.js';
 import { StickInsectLeg } from './StickInsectParts.js';
-import { TarantulaLeg } from './TarantulaParts.js';
+
 import { RhinoBeetleLeg } from './RhinoBeetleParts.js';
 import { CentipedeLeg } from './CentipedeParts.js';
 import { ScorpionLeg, ScorpionClaw } from './ScorpionParts.js';
 import { TitanLeg, TitanUtils } from './TitanParts.js';
 import { WetaLeg, WetaAntenna, drawGiantWeta } from './WetaParts.js';
+import { TarantulaLeg, AttackEffect, WebProjectile, TARANTULA_SETTINGS } from './TarantulaParts.js';
 
 // --- Standardized Size Configuration ---
 // Defines the scale range for each evolution stage.
@@ -168,6 +169,15 @@ export class Insect {
             reqCentipedes: 30,
             reqTarantulas: 20
         };
+
+        // --- Tarantula Vars ---
+        this.tarantulaEffects = [];
+        this.tarantulaWebs = [];
+        this.webCooldown = 0;
+        this.tarantulaAttackTimer = 0;
+        this.moveDist = 0;
+        this.stepGroup = 0;
+        this.palps = [{ ang: -0.35, len: 22 }, { ang: 0.35, len: 22 }];
     }
 
     initLegs() {
@@ -237,7 +247,10 @@ export class Insect {
             this.legs = [];
         } else if (this.form === 'TARANTULA') {
             this.tarantulaLegs = [];
+            // Init 8 legs (4 pairs)
             for (let i = 0; i < 4; i++) {
+                // Simulation uses Leg(parent, side (-1/1), index)
+                // My TarantulaLeg(side, index, scale)
                 this.tarantulaLegs.push(new TarantulaLeg(-1, i, this.scale));
                 this.tarantulaLegs.push(new TarantulaLeg(1, i, this.scale));
             }
@@ -832,6 +845,10 @@ export class Insect {
 
 
     update(input) {
+        if (this.form === 'TARANTULA') {
+            this.updateTarantula(input);
+            return;
+        }
         // --- Update Predation Logic (Spider / Mantis) ---
         this.updatePredation();
 
@@ -949,7 +966,6 @@ export class Insect {
             // Assuming dt is not passed, we might need a workaround or check if dt is this.game.dt?
             // For now, let's just leave it, but fix the duplication.
             // Ideally passing 'dt' if available or 0.016.
-            this.updateTitan(0.016);
             this.updateTitan(0.016);
             return;
         } else if (this.form === 'GIANT_WETA') {
@@ -1697,7 +1713,9 @@ export class Insect {
 
             this.tarantulaLegs.forEach(leg => {
                 leg.updateScale(this.scale);
-                leg.update(this.pos, this.angle, this.vel, this.stepGroup);
+                let moving = speed > 0.1;
+                let speedScale = speed / this.scale;
+                leg.update(this.pos, this.angle, moving, speedScale, this.stepGroup, 0);
             });
             return;
         } else if (this.form === 'RHINO_BEETLE') {
@@ -2070,21 +2088,45 @@ export class Insect {
             return SPIDER_CONFIG.legLength * 0.8 * this.scale;
         } else if (this.form === 'MANTIS') {
             return 120 * this.scale; // Significantly increased Scythe reach to ensure visible grapple
+        } else if (this.form === 'TARANTULA') {
+            return 40 * this.scale;
+        } else if (this.form === 'CENTIPEDE' || this.form === 'SCORPION') {
+            return 60 * this.scale;
+        } else if (this.form === 'TITAN') {
+            return 150 * this.scale;
         }
         return 25 * this.scale;
     }
 
     startPredation(prey, consumeCallback) {
+        // Allow Tarantula to eat during its attack lunge
+        if (this.form === 'TARANTULA' && this.predationState === 'attacking') {
+            if (consumeCallback) consumeCallback(prey.pos);
+            return true;
+        }
+
         if (this.predationState !== 'idle') return false; // Busy
 
         this.heldPrey = {
-            pos: prey.pos.clone(), // Clone position to animate independently
-            color: prey.color || '#fff',
+            pos: prey.pos.clone(),
+            angle: prey.angle,
+            scale: prey.scale || 1.0,
+            color: prey.color || prey.colors?.thorax || '#444',
+            form: prey.form || 'ANT',
+            colors: prey.colors,
             size: (prey.size || 5) * (prey.scale || 1)
         };
         this.onConsumePrey = consumeCallback;
         this.predationTimer = 0;
 
+        if (this.form === 'TARANTULA') {
+            this.predationState = 'attacking';
+            this.tarantulaAttackTimer = TARANTULA_SETTINGS.attackDuration;
+            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
+            return true;
+        }
+        // Note: Removed forced 'attacking' state here.
+        // Normal contact will now fall through to generic 'lunging' below.
         if (this.form === 'SPIDER' && this.spiderLegs.length >= 2) {
             this.predationState = 'reaching';
             // Front legs reach out
@@ -2253,14 +2295,7 @@ export class Insect {
         ctx.translate(this.pos.x, this.pos.y);
         ctx.rotate(this.angle);
         // Note: Scale is handled via leg.scale. But for body we use this.scale manually or apply ctx.scale?
-        // In snippet: `ctx.scale(this.scale, this.scale);`
-        // Existing Insect methods often use `* s` manually.
-        // Let's check `drawMantis`. It uses `const s = this.scale` and multiplies.
-        // The snippet used `ctx.scale`. 
-        // Mixing `ctx.scale` could affect stroke width if not careful, but snippet did `ctx.scale` and standard linewidths.
-        // I will use manual multiplication `* s` to be consistent with `Insect.js` style if possible, 
-        // OR just use `ctx.scale` if the snippet logic is complex with hardcoded coords.
-        // Snippet uses: `ctx.ellipse(-25, 0, 45, 22 ...)` hardcoded.
+        // In snippet: `ctx.ellipse(-25, 0, 45, 22 ...)` hardcoded.
         // So I MUST use `ctx.scale`.
 
         ctx.scale(this.scale, this.scale);
@@ -2456,51 +2491,277 @@ export class Insect {
         }
     }
 
+    updateTarantula(input) {
+        // --- Scale Handling ---
+        let effectiveTarget = this.targetScale * this.worldScaleModifier;
+        if (Math.abs(this.scale - effectiveTarget) > 0.01) {
+            this.scale += (effectiveTarget - this.scale) * 0.05;
+            this.tarantulaLegs.forEach(leg => leg.updateScale(this.scale));
+        } else {
+            this.scale = effectiveTarget;
+        }
+
+        const s = this.scale;
+
+        // --- Logic from Simulation Loop ---
+        let isAttacking = this.tarantulaAttackTimer > 0;
+
+        // Manual Sprint / Attack Trigger
+        // Manual Sprint / Attack Trigger
+        // Manual Sprint / Attack Trigger - DISABLED by user request. 
+        // Lunge now only triggers on Predation (Eat).
+        /*
+        if (input.attack && !isAttacking) {
+            this.predationState = 'attacking';
+            this.tarantulaAttackTimer = TARANTULA_SETTINGS.attackDuration;
+            // Align lunge to movement if moving
+            if (this.speed > 0.1) {
+                this.angle = Math.atan2(this.vel.y, this.vel.x);
+            }
+            isAttacking = true;
+        }
+        */
+
+        let attackFrames = TARANTULA_SETTINGS.attackDuration - this.tarantulaAttackTimer;
+
+        let ax = 0, ay = 0;
+
+        // Input mapping
+        let keyW = input.up;
+        let keyS = input.down;
+        let keyA = input.left;
+        let keyD = input.right;
+
+        // Acceleration Logic
+        let accel = TARANTULA_SETTINGS.accel * s;
+        if (input.shift && this.stamina > 0 && !isAttacking) {
+            accel *= 2.5; // Boost acceleration to overcome friction
+        }
+
+        if (isAttacking) {
+            // LOCK INPUT completely during attack logic (Windup & Lunge & Cooldown)
+            // But we must allow velocity to persist if it was set by Lunge Power.
+            // During Windup (before lunge), spider should stop moving?
+            if (attackFrames < TARANTULA_SETTINGS.attackWindup) {
+                this.vel.x *= 0.4; this.vel.y *= 0.4; // Friction stop for windup
+            }
+            // During Lunge, velocity is set manually below.
+            // After Lunge (Cooldown), we allow sliding (velocity decay) but NO input.
+            // So: Do NOTHING here for ax/ay.
+        } else {
+            // Normal Movement
+            if (keyW) ay -= accel;
+            if (keyS) ay += accel;
+            if (keyA) ax -= accel;
+            if (keyD) ax += accel;
+        }
+
+        this.vel.x += ax; this.vel.y += ay;
+        this.speed = Math.hypot(this.vel.x, this.vel.y);
+
+        let currentMaxSpeed = TARANTULA_SETTINGS.maxSpeed * s;
+
+        // Stamina Run Logic (Standard Shift Sprint)
+        if (input.shift && this.stamina > 0 && !isAttacking) {
+            currentMaxSpeed *= 2.2; // Sprint Multiplier
+            this.stamina = Math.max(0, this.stamina - 0.5); // Drain Stamina
+        } else {
+            if (this.stamina < this.maxStamina) this.stamina += 0.2; // Regen
+        }
+
+        if (isAttacking) {
+            // 大幅前移触发点：105 像素，确保在头部前方炸开
+            const burstDist = 105 * s;
+            const burstX = this.pos.x + Math.cos(this.angle) * burstDist;
+            const burstY = this.pos.y + Math.sin(this.angle) * burstDist;
+
+            if (attackFrames === TARANTULA_SETTINGS.attackWindup) {
+                // 瞬间弹射阶段：产生冲击波
+                this.tarantulaEffects.push(new AttackEffect(burstX, burstY, 'shockwave', 0, s));
+
+                // 产生大量灰尘粒子 (扇形朝前喷射)
+                for (let i = 0; i < 35; i++) {
+                    const ang = this.angle + (Math.random() - 0.5) * Math.PI * 1.2;
+                    this.tarantulaEffects.push(new AttackEffect(burstX, burstY, 'dust', ang, s));
+                }
+
+                // Apply Lunge Velocity
+                const power = TARANTULA_SETTINGS.attackPower * s;
+                this.vel.x = Math.cos(this.angle) * power;
+                this.vel.y = Math.sin(this.angle) * power;
+
+                // TRIGGER EAT CALLBACK at Apex
+                // In game, actual consumption happens here
+                if (this.onConsumePrey) {
+                    this.onConsumePrey(new Vec2(burstX, burstY));
+                    this.onConsumePrey = null;
+                }
+                // Preys disappear visually here (at impact)
+                this.heldPrey = null;
+            }
+
+            // 冲刺过程中持续产生破风粒子
+            if (attackFrames > TARANTULA_SETTINGS.attackWindup && attackFrames < TARANTULA_SETTINGS.attackWindup + 15) {
+                const headPos = this.pos.x + Math.cos(this.angle) * 60 * s;
+                const headPosY = this.pos.y + Math.sin(this.angle) * 60 * s;
+                this.tarantulaEffects.push(new AttackEffect(headPos, headPosY, 'spark', this.angle + Math.PI + (Math.random() - 0.5), s));
+            }
+
+            currentMaxSpeed = TARANTULA_SETTINGS.maxSpeed * 4.5 * s;
+        }
+
+        if (this.speed > currentMaxSpeed) {
+            this.vel.x = (this.vel.x / this.speed) * currentMaxSpeed;
+            this.vel.y = (this.vel.y / this.speed) * currentMaxSpeed;
+        }
+
+        this.vel.x *= TARANTULA_SETTINGS.friction;
+        this.vel.y *= TARANTULA_SETTINGS.friction;
+        this.pos.x += this.vel.x;
+        this.pos.y += this.vel.y;
+
+        // Rotation
+        // In simulation, rotation happens if speed > 0.2
+        if (this.speed > 0.2 * s) {
+            // Note: Simulation uses Math.atan2(this.vel.y, this.vel.x) which aligns to movement.
+            // Game normally has explicit turn input.
+            // But strict copy implies we use movement direction alignment?
+            // "W A S D" moves relative to screen in simulation logic (absolute ax/ay).
+            // Game input usually assumes tank controls or absolute? 
+            // Insect.js default: dx/dy -> targetAngle -> rotate towards.
+            // Simulation: Accel -> Vel -> targetAngle -> rotate towards.
+            // It is compatible.
+
+            const targetAngle = Math.atan2(this.vel.y, this.vel.x);
+            let diff = targetAngle - this.angle;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            let rotMod = (isAttacking && attackFrames < TARANTULA_SETTINGS.attackWindup) ? 0.02 : (isAttacking ? 0.1 : 1);
+            this.angle += diff * TARANTULA_SETTINGS.rotSpeed * rotMod;
+
+            this.moveDist += this.speed;
+            if (this.moveDist > 24 * s) { this.stepGroup = 1 - this.stepGroup; this.moveDist = 0; }
+        }
+
+        // Timers
+        if (this.tarantulaAttackTimer > 0) {
+            this.tarantulaAttackTimer--;
+            if (this.tarantulaAttackTimer <= 0) {
+                this.predationState = 'idle'; // Reset game state
+            }
+        }
+        if (this.webCooldown > 0) this.webCooldown--;
+
+        // Boundaries (Game environment uses obstruction, but basic clamps here good for safety or omit?)
+        // Omni-directional game world, maybe no bounds. Omit.
+
+        // Updates
+        this.tarantulaEffects.forEach(e => e.update());
+        this.tarantulaEffects = this.tarantulaEffects.filter(e => e.active);
+        this.tarantulaWebs.forEach(web => web.update());
+        this.tarantulaWebs = this.tarantulaWebs.filter(web => web.active);
+
+        this.tarantulaEffects = this.tarantulaEffects.filter(e => e.active);
+        this.tarantulaWebs.forEach(web => web.update());
+        this.tarantulaWebs = this.tarantulaWebs.filter(web => web.active);
+
+        // Run generic predation update (for standard lunge/eating)
+        if (this.predationState !== 'attacking' && this.predationState !== 'idle') {
+            this.updatePredation();
+        }
+
+        // Fix: Update headPos for Collision Detection
+        this.headPos = this.pos.clone().add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(20 * s));
+
+        let moving = this.speed > 0.2 * s;
+        this.tarantulaLegs.forEach(l => l.update(this.pos, this.angle, moving, this.speed / s, this.stepGroup, this.tarantulaAttackTimer));
+    }
+
     drawTarantula(ctx) {
         const s = this.scale;
 
+        // Webs (Splatted bottom)
+        this.tarantulaWebs.forEach(web => { if (web.isSplatted) web.draw(ctx); });
+
+        // Held Prey (Standard Eat)
+        this.drawHeldPrey(ctx);
+
+        let isAttacking = this.tarantulaAttackTimer > 0;
+        let attackFrames = TARANTULA_SETTINGS.attackDuration - this.tarantulaAttackTimer;
+        let shakeX = 0, shakeY = 0;
+
+        if (isAttacking) {
+            if (attackFrames < TARANTULA_SETTINGS.attackWindup) {
+                shakeX = (Math.random() - 0.5) * 3 * s; shakeY = (Math.random() - 0.5) * 3 * s;
+            } else if (attackFrames < TARANTULA_SETTINGS.attackWindup + 12) {
+                shakeX = (Math.random() - 0.5) * 18 * s; shakeY = (Math.random() - 0.5) * 18 * s;
+            }
+        }
+
+        if (shakeX !== 0) { ctx.save(); ctx.translate(shakeX, shakeY); }
+
+        // Shadow
         ctx.save();
-        // Shadow Pass
-        // Offset shadow slightly? User snippet used translate(15,20).
-        ctx.translate(5 * s, 5 * s);
+        ctx.translate(15 * s, 20 * s);
         ctx.globalAlpha = 0.2;
         this.renderTarantulaBody(ctx, true);
         ctx.restore();
 
-        // Main Pass
+        // Main Body
         this.renderTarantulaBody(ctx, false);
+
+        if (shakeX !== 0) ctx.restore();
+
+        // Webs (Flying)
+        this.tarantulaWebs.forEach(web => { if (!web.isSplatted) web.draw(ctx); });
+
+        // Effects (Top)
+        this.tarantulaEffects.forEach(e => e.draw(ctx));
     }
 
     renderTarantulaBody(ctx, isShadow) {
         const s = this.scale;
 
-        // 1. Legs
-        this.tarantulaLegs.forEach(l => l.draw(ctx, isShadow));
+        this.tarantulaLegs.forEach(l => l.draw(ctx, isShadow, this.tarantulaAttackTimer));
 
         ctx.save();
         ctx.translate(this.pos.x, this.pos.y);
         ctx.rotate(this.angle);
 
-        // Body Colors
-        const SETTINGS = {
-            spiderBlack: '#16100b',
-            spiderBrown: '#3a2a1a',
-            spiderFuzz: '#4a3a2a',
-            spiderSpike: '#2a1a10'
-        };
+        let isAttacking = this.tarantulaAttackTimer > 0;
+        let attackFrames = TARANTULA_SETTINGS.attackDuration - this.tarantulaAttackTimer;
+
+        // Scale Shake Effect on Body
+        if (isAttacking) {
+            if (attackFrames < TARANTULA_SETTINGS.attackWindup) {
+                let t = attackFrames / TARANTULA_SETTINGS.attackWindup;
+                ctx.scale(1 - t * 0.2, 1 - t * 0.1);
+            } else {
+                let t = (attackFrames - TARANTULA_SETTINGS.attackWindup) / 30;
+                // Clamp
+                if (t > 1) t = 1; else if (t < 0) t = 0; // Simple clamp for safety
+                // Simulation: let t = (frames - windup) / 30. It might go > 1? 
+                // Simulation logic: sin(t * PI).
+                let sWiggle = 1 + Math.sin(t * Math.PI) * 0.18;
+                ctx.scale(sWiggle, sWiggle);
+            }
+        }
+
+        const SETTINGS = TARANTULA_SETTINGS;
 
         if (isShadow) {
             ctx.fillStyle = '#000';
             ctx.beginPath(); ctx.ellipse(4 * s, 0, 22 * s, 18 * s, 0, 0, Math.PI * 2); ctx.fill();
             ctx.beginPath(); ctx.ellipse(-30 * s, 0, 35 * s, 26 * s, 0, 0, Math.PI * 2); ctx.fill();
         } else {
-            // Helpers for Fuzz
+            // Helpers
             const drawFringeFuzz = (x, y, rx, ry, count, longSpikes) => {
                 for (let i = 0; i < count; i++) {
                     const ang = (i / count) * Math.PI * 2;
                     const isLong = longSpikes && (i % 7 === 0);
                     ctx.strokeStyle = isLong ? SETTINGS.spiderSpike : SETTINGS.spiderFuzz;
                     ctx.lineWidth = (isLong ? 0.8 : 0.5) * s;
+                    // Coords are local to body calc
                     const px = x + Math.cos(ang) * rx;
                     const py = y + Math.sin(ang) * ry;
                     const hLen = ((isLong ? 12 : 5) + Math.random() * 5) * s;
@@ -2532,47 +2793,49 @@ export class Insect {
                 }
             };
 
-            // 1. Abdomen
-            let abdGrad = ctx.createRadialGradient(-30 * s, -10 * s, 5 * s, -30 * s, 0, 40 * s);
-            abdGrad.addColorStop(0, '#3a2a1a');
-            abdGrad.addColorStop(1, '#0a0805');
-            ctx.fillStyle = abdGrad;
-            ctx.beginPath(); ctx.ellipse(-30 * s, 0, 35 * s, 26 * s, 0, 0, Math.PI * 2); ctx.fill();
+            const abdGrad = ctx.createRadialGradient(-30 * s, -10 * s, 5 * s, -30 * s, 0, 40 * s);
+            abdGrad.addColorStop(0, '#3a2a1a'); abdGrad.addColorStop(1, '#0a0805');
+            ctx.fillStyle = abdGrad; ctx.beginPath(); ctx.ellipse(-30 * s, 0, 35 * s, 26 * s, 0, 0, Math.PI * 2); ctx.fill();
             drawFringeFuzz(-30 * s, 0, 35 * s, 26 * s, 60, true);
             drawSurfaceFuzz(-30 * s, 0, 30 * s, 20 * s, 30);
 
-            // 2. Cephalothorax
-            let thoGrad = ctx.createRadialGradient(6 * s, -6 * s, 2 * s, 6 * s, 0, 25 * s);
-            thoGrad.addColorStop(0, '#2a1a0a');
-            thoGrad.addColorStop(1, '#050402');
-            ctx.fillStyle = thoGrad;
-            ctx.beginPath(); ctx.ellipse(4 * s, 0, 22 * s, 18 * s, 0, 0, Math.PI * 2); ctx.fill();
+            const thoGrad = ctx.createRadialGradient(6 * s, -6 * s, 2 * s, 6 * s, 0, 25 * s);
+            thoGrad.addColorStop(0, '#2a1a0a'); thoGrad.addColorStop(1, '#050402');
+            ctx.fillStyle = thoGrad; ctx.beginPath(); ctx.ellipse(4 * s, 0, 22 * s, 18 * s, 0, 0, Math.PI * 2); ctx.fill();
             drawFringeFuzz(4 * s, 0, 22 * s, 18 * s, 40, false);
             drawSurfaceFuzz(4 * s, 0, 18 * s, 14 * s, 20);
 
-            // 3. Eyes
             ctx.fillStyle = '#000';
             ctx.beginPath(); ctx.arc(18 * s, 5 * s, 3.5 * s, 0, Math.PI * 2); ctx.fill();
             ctx.beginPath(); ctx.arc(18 * s, -5 * s, 3.5 * s, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = 'rgba(255,255,255,0.5)';
-            ctx.beginPath(); ctx.arc(19 * s, 4 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(19 * s, -4 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
 
-            // 4. Palps
-            ctx.strokeStyle = '#120c06';
-            ctx.lineWidth = 6 * s;
-            let palps = [{ ang: -0.35, len: 22 }, { ang: 0.35, len: 22 }];
-            palps.forEach(p => {
-                ctx.beginPath();
-                ctx.moveTo(20 * s, p.ang * 12 * s);
-                let a = 0; // Relative angle?
-                let px = (28 + Math.cos(p.ang) * p.len) * s;
-                let py = (p.ang * 28) * s + Math.sin(Date.now() * 0.006) * 3 * s;
-                ctx.lineTo(px, py);
-                ctx.stroke();
+            let eyeFlash = (isAttacking && attackFrames >= SETTINGS.attackWindup && attackFrames < SETTINGS.attackWindup + 10);
+            if (eyeFlash) {
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = "#fff";
+                ctx.fillStyle = "#fff";
+            } else {
+                ctx.fillStyle = isAttacking ? '#ff3300' : 'rgba(255,255,255,0.5)';
+            }
+            ctx.beginPath(); ctx.arc(19 * s, 4 * s, (eyeFlash ? 3.5 : 1.2) * s, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(19 * s, -4 * s, (eyeFlash ? 3.5 : 1.2) * s, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
 
-                let palpAngle = Math.atan2(py - p.ang * 12 * s, px - 20 * s);
-                drawJointTuftInside(px, py, palpAngle);
+            ctx.strokeStyle = '#120c06'; ctx.lineWidth = 6 * s;
+            this.palps.forEach(p => {
+                ctx.beginPath(); ctx.moveTo(20 * s, p.ang * (12 * s));
+                let palpSwing = 0;
+                if (isAttacking) {
+                    palpSwing = (attackFrames < SETTINGS.attackWindup) ? Math.sin(Date.now() * 0.15) * (18 * s) : Math.sin(Date.now() * 0.05) * (30 * s);
+                } else if (this.webCooldown > 10) {
+                    palpSwing = p.ang * (40 * s);
+                } else {
+                    palpSwing = Math.sin(Date.now() * 0.006) * (3 * s);
+                }
+                const px = (28 + Math.cos(p.ang) * p.len) * s;
+                const py = (p.ang * 28) * s + palpSwing;
+                ctx.lineTo(px, py); ctx.stroke();
+                drawJointTuftInside(px, py, Math.atan2(py - p.ang * 12 * s, px - 20 * s));
             });
         }
         ctx.restore();
@@ -2787,6 +3050,9 @@ export class Insect {
 
             ctx.restore();
         });
+
+        // Draw Held Prey (Visual Eating)
+        this.drawHeldPrey(ctx);
     }
 
     updateScorpion(input) {
@@ -2867,6 +3133,11 @@ export class Insect {
         // Ref Claws: update(pos, angle, velocity, isAttacking). 
         // My Class Signature: update(pos, angle, velocity, isAttacking).
         this.scorpionClaws.forEach(claw => claw.update(this.pos, this.angle, this.vel, (this.scorpionStingTarget > 0.5)));
+
+        // Fix: Update headPos for Collision Detection from Seg 0
+        if (this.scorpionSegments.length > 0) {
+            this.headPos = this.scorpionSegments[0].pos.clone(); // Use Head segment
+        }
     }
 
     drawScorpion(ctx) {
@@ -2910,6 +3181,9 @@ export class Insect {
             ctx.strokeStyle = '#000'; ctx.lineWidth = 2 * s; ctx.stroke();
             ctx.restore();
         }
+
+        // Draw Held Prey (Visual Eating)
+        this.drawHeldPrey(ctx);
     }
 
     drawScorpionSegment(ctx, i) {
@@ -2981,6 +3255,9 @@ export class Insect {
 
         // Update Antennae (Stable Chain)
         this.updateStableChainAntennae(this.titanAntennae, 120 * this.scale, 50 * this.scale, 22 * this.scale);
+
+        // Fix: Update headPos for collision
+        this.headPos = this.pos.clone().add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(90 * this.scale));
     }
 
     updateStableChain(chain, rootOffset, spacing) {
@@ -3095,6 +3372,9 @@ export class Insect {
         // Head
         this.drawTitanHead(ctx, glow);
 
+        // Draw Held Prey (Visual Eating)
+        this.drawHeldPrey(ctx);
+
         ctx.restore();
 
         // Antennae
@@ -3174,6 +3454,9 @@ export class Insect {
                 });
             }
         });
+
+        // Draw Held Prey (Visual Eating)
+        this.drawHeldPrey(ctx);
     }
 
     drawTitanHead(ctx, glow) {
