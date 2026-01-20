@@ -103,11 +103,13 @@ function updateUI() {
 }
 
 // Input handling
-const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false, ShiftLeft: false, ShiftRight: false, Space: false };
+const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false, ShiftLeft: false, ShiftRight: false, Space: false, MouseDown: false };
 
 window.addEventListener('keydown', e => {
     if (keys.hasOwnProperty(e.code)) keys[e.code] = true;
 });
+window.addEventListener('mousedown', () => { keys.MouseDown = true; });
+window.addEventListener('mouseup', () => { keys.MouseDown = false; });
 window.addEventListener('keyup', e => {
     if (keys.hasOwnProperty(e.code)) keys[e.code] = false;
 });
@@ -424,7 +426,8 @@ function gameLoop() {
         left: keys.KeyA || keys.ArrowLeft,
         right: keys.KeyD || keys.ArrowRight,
         shift: keys.ShiftLeft || keys.ShiftRight,
-        attack: keys.Space
+        attack: keys.Space,
+        mouseDown: keys.MouseDown
     };
 
     player.update(input);
@@ -611,6 +614,8 @@ function gameLoop() {
                 c.updateStickInsect({});
             } else if (c.form === 'COCKROACH') {
                 c.updateCockroach({});
+            } else if (c.form === 'MANTIS') {
+                c.updateMantis({});
             }
             // Standard Legs (Scorpion legs list is empty, so this is safe to leave or wrap)
             c.legs.forEach(l => l.update(c.thoraxPos, c.angle, c.vel, true));
@@ -665,9 +670,12 @@ function gameLoop() {
         }
 
         // 碰撞/进食检测
-        // 碰撞/进食检测
-        // Replaced simple dist check with robust body checking
-        if (checkCollision(player, c)) {
+        // Replaced simple dist check with robust body checking OR Attack Range for Lunge
+        let eatRange = player.getEatRange ? player.getEatRange() : 50 * player.scale;
+        // Use generic distance check for trigger to allow Mantis Lunge to start early
+        let distToCreep = player.pos.dist(c.pos);
+        // Collision OR In Range (for Mantis/Spider)
+        if (checkCollision(player, c) || (player.form === 'MANTIS' && distToCreep < eatRange)) {
             // Restriction Logic:
             // 1. Stage Comparison First
             if (c.isRival) {

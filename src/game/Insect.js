@@ -138,6 +138,20 @@ export class Insect {
         this.wetaLegs = [];
         this.wetaAntennae = [];
 
+        // --- Mantis Vars ---
+        this.mantisAttackState = 0; // 0:Idle, 1:Charge, 2:Strike, 3:Retract
+        this.mantisAttackTimer = 0;
+        this.mantisLunge = 0;
+        this.mantisEffects = [];
+        this.mantisAbdomenAngle = 0;
+        this.mantisHeadAngle = 0;
+        this.animTimer = 0;
+        this.mantisAttackTarget = null;
+
+        // --- Rhino Vars ---
+        this.rhinoLegs = [];
+        this.rhinoWalkCycle = 0;
+
         // --- Centipede Properties ---
         this.centipedeSegments = []; // Array of {x, y, angle}
         this.centipedeLegs = []; // Legs are dynamic or stored? Reference generated them on fly or just drawn? 
@@ -967,6 +981,9 @@ export class Insect {
         } else if (this.form === 'COCKROACH') {
             this.updateCockroach(input);
             return;
+        } else if (this.form === 'MANTIS') {
+            this.updateMantis(input);
+            return;
         } else if (this.form === 'TITAN') {
             this.updateTitan(16 / 1000); // Fixed dt or just allow usage
             // Main update doesn't pass dt to updateVisuals, it uses 'input'.
@@ -1748,11 +1765,167 @@ export class Insect {
         });
     }
 
+    triggerMantisAttack(target = null) {
+        if (this.mantisAttackState === 0) {
+            this.mantisAttackState = 1; // Charge
+            this.mantisAttackTimer = 0;
+
+            // Set generalized attacking state
+            this.predationState = 'attacking';
+
+            // Determine Target Pos
+            const strikeDist = 100 * this.scale;
+            if (target) {
+                // Aim at actual target
+                const angleToTarget = Math.atan2(target.y - this.pos.y, target.x - this.pos.x);
+                let diff = angleToTarget - this.angle;
+                // Normalize angle
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+
+                this.angle += diff * 0.5; // Snap turn
+                this.mantisAttackTarget = target;
+            } else {
+                // Free attack (at mouse/forward)
+                this.mantisAttackTarget = this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(strikeDist));
+            }
+        }
+    }
+
+    updateMantis(input) {
+        const s = this.scale;
+
+        // --- Input & Trigger ---
+        // Removed manual mouse trigger to allow collision-based Auto Predation to work without state conflict.
+
+        // --- Attack State Machine ---
+        let currentLegTarget = null;
+
+        if (this.mantisAttackState === 1) { // CHARGE
+            this.mantisAttackTimer++;
+            // Pull back
+            this.mantisLunge = this.mantisLunge + (-10 * s - this.mantisLunge) * 0.1;
+
+            if (this.mantisAttackTimer > 20) {
+                this.mantisAttackState = 2; // STRIKE
+                this.mantisAttackTimer = 0;
+            }
+        } else if (this.mantisAttackState === 2) { // STRIKE
+            this.mantisAttackTimer++;
+
+            // Frame 1: Effects
+            if (this.mantisAttackTimer === 1) {
+                const strikeDist = 100 * s;
+                let targetPos = this.mantisAttackTarget || this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(strikeDist));
+
+                // Shockwave
+                this.mantisEffects.push({
+                    type: 'shockwave',
+                    x: targetPos.x,
+                    y: targetPos.y,
+                    radius: 10 * s,
+                    maxRadius: 80 * s,
+                    alpha: 1.0,
+                    color: '255, 255, 220',
+                    lineWidth: 5 * s
+                });
+                // Flash
+                this.mantisEffects.push({
+                    type: 'flash',
+                    x: targetPos.x,
+                    y: targetPos.y,
+                    radius: 5 * s,
+                    maxRadius: 40 * s,
+                    alpha: 0.8,
+                    color: '255, 255, 255'
+                });
+
+                // Eat Logic
+                if (this.heldPrey && this.onConsumePrey) {
+                    this.onConsumePrey(this.heldPrey.pos);
+                    this.heldPrey = null;
+                    this.onConsumePrey = null;
+                }
+            }
+
+            // Thrust forward
+            this.mantisLunge = this.mantisLunge + (25 * s - this.mantisLunge) * 0.4;
+            currentLegTarget = this.mantisAttackTarget;
+
+            if (this.mantisAttackTimer > 15) {
+                this.mantisAttackState = 3; // RETRACT
+                this.mantisAttackTimer = 0;
+            }
+        } else if (this.mantisAttackState === 3) { // RETRACT
+            this.mantisAttackTimer++;
+            this.mantisLunge = this.mantisLunge + (0 - this.mantisLunge) * 0.08;
+
+            if (this.mantisAttackTimer > 30) {
+                this.mantisAttackState = 0;
+                this.mantisAttackTarget = null;
+                this.predationState = 'idle'; // Reset state
+            }
+        }
+
+        // --- Effects Update ---
+        for (let i = this.mantisEffects.length - 1; i >= 0; i--) {
+            const fx = this.mantisEffects[i];
+            if (fx.type === 'shockwave') {
+                fx.radius += 5 * s;
+                fx.alpha -= 0.06;
+                fx.lineWidth *= 0.9;
+            } else if (fx.type === 'flash') {
+                fx.radius += 2 * s;
+                fx.alpha -= 0.1;
+            }
+            if (fx.alpha <= 0) {
+                this.mantisEffects.splice(i, 1);
+            }
+        }
+
+        // --- Movement (Lock during attack) ---
+        if (this.mantisAttackState !== 0) {
+            this.vel = this.vel.mult(0.8);
+        }
+
+        // --- Head/Abdomen Anim ---
+        this.animTimer += 0.1;
+        const sway = Math.sin(this.animTimer) * 0.1;
+        let turnAmount = 0;
+
+        this.mantisAbdomenAngle = this.mantisAbdomenAngle + (-turnAmount * 0.5 + sway - this.mantisAbdomenAngle) * 0.1;
+
+        // --- Legs Update ---
+        // Apply Lunge Offset to body position for legs anchor
+        let lungeVec = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(this.mantisLunge);
+        let drawPos = this.pos.add(lungeVec);
+
+        this.mantisLegs.forEach(leg => {
+            leg.updateScale(s);
+            if (leg.isFrontArm) {
+                // Adjust speed based on state
+                if (this.mantisAttackState === 1) leg.followSpeed = 0.05;
+                else if (this.mantisAttackState === 2) leg.followSpeed = 0.4;
+                else if (this.mantisAttackState === 3) leg.followSpeed = 0.05;
+                else leg.followSpeed = 0.1;
+
+                leg.update(drawPos.x, drawPos.y, this.angle, this.vel.mag(), currentLegTarget);
+            } else {
+                leg.update(drawPos.x, drawPos.y, this.angle, this.vel.mag());
+            }
+        });
+    }
+
     drawMantis(ctx) {
         const s = this.scale;
+
+        let lungeVec = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(this.mantisLunge);
+        let drawX = this.pos.x + lungeVec.x;
+        let drawY = this.pos.y + lungeVec.y;
+
         // 1. Shadows
         ctx.save();
-        ctx.translate(this.pos.x + 5 * s, this.pos.y + 5 * s);
+        ctx.translate(drawX + 5 * s, drawY + 5 * s);
         ctx.rotate(this.angle);
         ctx.fillStyle = 'rgba(0,0,0,0.2)';
         ctx.beginPath();
@@ -1761,35 +1934,28 @@ export class Insect {
         ctx.fill();
         ctx.restore();
 
-        // 2. Legs (Under body)
-        // 2. Legs (Walking Legs & Scythes - Under body)
-        // Draw all legs (0-5) before body so they appear connected underneath.
-        for (let i = 0; i < 6; i++) {
-            if (this.mantisLegs[i]) this.mantisLegs[i].draw(ctx);
-        }
+        // 2. Legs
+        this.mantisLegs.forEach(leg => leg.draw(ctx));
 
-        // Draw Held Prey (Under body or Over? Legs are under body, prey held by legs should maybe be under too?)
-        if (this.predationState === 'mantis_grapple' && this.heldPrey) {
+        if (this.heldPrey) {
             this.drawHeldPrey(ctx);
         }
 
         // 3. Body
         ctx.save();
-        ctx.translate(this.pos.x + this.lungeOffset.x, this.pos.y + this.lungeOffset.y);
+        ctx.translate(drawX, drawY);
         ctx.rotate(this.angle);
 
         // --- Abdomen ---
         ctx.save();
         ctx.translate(-25 * s, 0);
-        ctx.rotate(this.abdomenAngle);
+        ctx.rotate(this.mantisAbdomenAngle);
 
-        // Main
         ctx.fillStyle = '#6DA04B';
         ctx.beginPath();
         ctx.ellipse(-30 * s, 0, 45 * s, 18 * s, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Lines
         ctx.strokeStyle = '#558238';
         ctx.lineWidth = 2 * s;
         for (let i = 0; i < 4; i++) {
@@ -1807,7 +1973,7 @@ export class Insect {
         ctx.lineTo(-10 * s, 8 * s);
         ctx.fill();
 
-        ctx.restore();
+        ctx.restore(); // End Abdomen
 
         // --- Thorax ---
         ctx.fillStyle = '#7CAF54';
@@ -1818,7 +1984,6 @@ export class Insect {
         ctx.lineTo(-25 * s, 6 * s);
         ctx.fill();
 
-        // Midline
         ctx.strokeStyle = '#5D8A40';
         ctx.lineWidth = 1 * s;
         ctx.beginPath();
@@ -1829,9 +1994,8 @@ export class Insect {
         // --- Head ---
         ctx.save();
         ctx.translate(25 * s, 0);
-        ctx.rotate(this.headAngle);
+        ctx.rotate(this.mantisHeadAngle);
 
-        // Triangle Head
         ctx.fillStyle = '#8BC34A';
         ctx.beginPath();
         ctx.moveTo(0, -8 * s);
@@ -1841,23 +2005,25 @@ export class Insect {
         ctx.fill();
 
         // Eyes
-        ctx.fillStyle = '#E1F5C4'; // Highlight
-        // Left Eye
+        ctx.fillStyle = '#E1F5C4';
+        // Left
         ctx.beginPath();
         ctx.ellipse(2 * s, -8 * s, 4 * s, 6 * s, -0.5, 0, Math.PI * 2);
-        ctx.fillStyle = '#DDDDDD';
         ctx.fill();
-        ctx.beginPath(); // Pupil
+        ctx.fillStyle = '#DDDDDD'; // Highlight?
+        // Pupil
+        ctx.beginPath();
         ctx.arc(3 * s, -8 * s, 1.5 * s, 0, Math.PI * 2);
         ctx.fillStyle = 'black';
         ctx.fill();
 
-        // Right Eye
+        // Right
+        ctx.fillStyle = '#E1F5C4';
         ctx.beginPath();
         ctx.ellipse(2 * s, 8 * s, 4 * s, 6 * s, 0.5, 0, Math.PI * 2);
-        ctx.fillStyle = '#DDDDDD';
         ctx.fill();
-        ctx.beginPath(); // Pupil
+        // Pupil
+        ctx.beginPath();
         ctx.arc(3 * s, 8 * s, 1.5 * s, 0, Math.PI * 2);
         ctx.fillStyle = 'black';
         ctx.fill();
@@ -1866,13 +2032,11 @@ export class Insect {
         ctx.strokeStyle = '#4a3b22';
         ctx.lineWidth = 0.5 * s;
 
-        // Left Antenna
         ctx.beginPath();
         ctx.moveTo(12 * s, -2 * s);
         ctx.quadraticCurveTo((25 + Math.sin(this.animTimer * 2) * 5) * s, -15 * s, 35 * s, -20 * s);
         ctx.stroke();
 
-        // Right Antenna
         ctx.beginPath();
         ctx.moveTo(12 * s, 2 * s);
         ctx.quadraticCurveTo((25 + Math.cos(this.animTimer * 2) * 5) * s, 15 * s, 35 * s, 20 * s);
@@ -1881,7 +2045,24 @@ export class Insect {
         ctx.restore(); // End Head
         ctx.restore(); // End Body
 
+        // --- Held Prey ---
+        if (this.heldPrey) this.drawHeldPrey(ctx);
 
+        // --- Effects ---
+        this.mantisEffects.forEach(fx => {
+            if (fx.type === 'shockwave') {
+                ctx.beginPath();
+                ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(${fx.color}, ${fx.alpha})`;
+                ctx.lineWidth = fx.lineWidth;
+                ctx.stroke();
+            } else if (fx.type === 'flash') {
+                ctx.beginPath();
+                ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${fx.color}, ${fx.alpha})`;
+                ctx.fill();
+            }
+        });
     }
 
     drawCockroach(ctx) {
@@ -2175,15 +2356,8 @@ export class Insect {
             frontLeft.overrideTarget = this.heldPrey.pos;
             frontRight.overrideTarget = this.heldPrey.pos;
         } else if (this.form === 'MANTIS' && this.mantisLegs) {
-            this.predationState = 'mantis_grapple';
-            this.predationTimer = 0;
-            // Front Arms: Index 4, 5
-            const armL = this.mantisLegs[4]; // Left
-            const armR = this.mantisLegs[5]; // Right
-            armL.overrideTarget = this.heldPrey.pos;
-            armR.overrideTarget = this.heldPrey.pos;
-            armL.overrideTarget = this.heldPrey.pos;
-            armR.overrideTarget = this.heldPrey.pos;
+            this.triggerMantisAttack(prey.pos);
+            return true;
         } else if (this.form === 'STICK_INSECT') {
             this.predationState = 'attacking';
             // Align to prey
@@ -2207,42 +2381,20 @@ export class Insect {
         if (this.predationState === 'idle') return;
 
         // --- Mantis Grapple ---
-        if (this.predationState === 'mantis_grapple') {
-            this.predationTimer++;
-            const armL = this.mantisLegs[4];
-            const armR = this.mantisLegs[5];
+        if (this.predationState === 'attacking' && this.form === 'MANTIS') {
+            if (this.heldPrey) {
+                const s = this.scale;
+                const lungeDist = this.mantisLunge;
+                // Visual sweet spot for "in claws"
+                const baseReach = 60 * s;
+                const totalReach = lungeDist + baseReach;
 
-            // Pull Stage (Immediate pull for snappy feel, or delayed?)
-            // Let's do: 
-            // 1. Arms go to prey (Already set overrideTarget in start)
-            // 2. Drag prey to Head
+                const targetPos = this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(totalReach));
 
-            // Target Position: Mouth
-            const mouthPos = this.headPos.clone().add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(5 * this.scale));
-
-            // Smoothly pull prey to mouth
-            const dist = this.heldPrey.pos.dist(mouthPos);
-
-            // Pull Speed
-            const pullSpeed = 4.0 * this.scale;
-
-            if (dist > pullSpeed) {
-                // Move prey towards mouth
-                let dir = mouthPos.sub(this.heldPrey.pos).normalize().mult(pullSpeed);
-                this.heldPrey.pos = this.heldPrey.pos.add(dir);
-
-                // Update arms target to follow prey
-                armL.overrideTarget = this.heldPrey.pos;
-                armR.overrideTarget = this.heldPrey.pos;
-            } else {
-                // Arrived at mouth
-                if (this.onConsumePrey) {
-                    this.onConsumePrey(this.heldPrey.pos); // Particles
-                    this.onConsumePrey = null;
-                }
-                this.predationState = 'idle';
-                armL.overrideTarget = null;
-                armR.overrideTarget = null;
+                // Snap/Lerp prey to claws
+                this.heldPrey.pos.x += (targetPos.x - this.heldPrey.pos.x) * 0.4;
+                this.heldPrey.pos.y += (targetPos.y - this.heldPrey.pos.y) * 0.4;
+                this.heldPrey.angle = this.angle + Math.PI / 2; // Orient prey crosswise
             }
             return;
         }
