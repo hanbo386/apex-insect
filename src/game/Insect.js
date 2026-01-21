@@ -878,11 +878,11 @@ export class Insect {
         // --- Update Predation Logic (Spider / Mantis) ---
         this.updatePredation();
 
-        // Immobilize if eating (Spider / Mantis Grapple / Scorpion Strike / Weta Bite)
+        // Immobilize if eating (Spider / Mantis Grapple / Scorpion Strike / Weta Bite / Ladybug Slide / Stick Insect)
         if (((this.form === 'SPIDER' || this.form === 'MANTIS') && this.predationState !== 'idle') ||
-            (this.form === 'SCORPION' && this.scorpionAttackState !== 'none') ||
             (this.form === 'GIANT_WETA' && (this.wetaState === 'biting' || this.wetaState === 'attacking')) ||
-            (this.form === 'LADYBUG' && this.ladybugState === 'attacking')) {
+            (this.form === 'LADYBUG' && this.ladybugState === 'attacking') ||
+            (this.form === 'STICK_INSECT' && this.predationState === 'attacking')) {
             input = { up: false, down: false, left: false, right: false, shift: false };
         }
 
@@ -1603,9 +1603,9 @@ export class Insect {
         let isAttacking = this.ladybugAttackTimer > 0;
 
         // Standard Movement Config
-        let accel = 0.9 * s; // Reduced by 30%
+        let accel = 0.63 * s;
         let friction = 0.85;
-        let maxSpeed = 2.5 * s; // Reduced by ~30% from 3.5
+        let maxSpeed = 1.75 * s;
 
         let ax = 0; let ay = 0;
 
@@ -2718,6 +2718,11 @@ export class Insect {
                     }
                 });
             }
+        } else if (this.form === 'CENTIPEDE') {
+            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
+            this.predationState = 'lunging';
+            this.lungeTimer = 10;
+            return true;
         } else if (this.form === 'COCKROACH') {
             this.predationState = 'attacking';
             // Align to prey
@@ -2913,7 +2918,7 @@ export class Insect {
             }
 
             // Lock Input during heavy lunge phase
-            if (this.cricketAttackTimer > 10) {
+            if (this.cricketAttackTimer > 0) {
                 shouldLockInput = true;
             }
 
@@ -2940,9 +2945,9 @@ export class Insect {
         }
 
         // --- Movement Logic ---
-        let accel = 0.8 * s;
+        let accel = 0.56 * s;
         let friction = 0.92;
-        let maxSpeed = 4.0 * s;
+        let maxSpeed = 2.8 * s;
         let turnSpeed = 0.08;
 
         if (!shouldLockInput) {
@@ -3278,7 +3283,7 @@ export class Insect {
         let keyD = input.right || false;
 
         // Acceleration Logic
-        let accel = TARANTULA_SETTINGS.accel * s;
+        let accel = (TARANTULA_SETTINGS.accel * 1.3) * s;
         if (input.shift && this.stamina > 0 && !isAttacking) {
             accel *= 2.5; // Boost acceleration.
         }
@@ -3304,7 +3309,7 @@ export class Insect {
         this.vel.x += ax; this.vel.y += ay;
         this.speed = Math.hypot(this.vel.x, this.vel.y);
 
-        let currentMaxSpeed = TARANTULA_SETTINGS.maxSpeed * s;
+        let currentMaxSpeed = (TARANTULA_SETTINGS.maxSpeed * 1.3) * s;
 
         // Stamina Run Logic (Standard Shift Sprint)
         if (input.shift && this.stamina > 0 && !isAttacking) {
@@ -4417,7 +4422,7 @@ export class Insect {
             // Reuse generic acceleration or simple directional?
 
             let ax = 0, ay = 0;
-            let accel = 0.5 * s;
+            let accel = 0.35 * s;
             if (input.shift && this.stamina > 0) { accel *= 2.0; this.stamina -= 0.5; }
             else if (this.stamina < this.maxStamina) this.stamina += 0.5;
 
