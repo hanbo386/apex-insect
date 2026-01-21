@@ -882,6 +882,7 @@ export class Insect {
         if (((this.form === 'SPIDER' || this.form === 'MANTIS') && this.predationState !== 'idle') ||
             (this.form === 'GIANT_WETA' && (this.wetaState === 'biting' || this.wetaState === 'attacking')) ||
             (this.form === 'LADYBUG' && this.ladybugState === 'attacking') ||
+            (this.form === 'CENTIPEDE' && this.predationState === 'attacking') ||
             (this.form === 'STICK_INSECT' && this.predationState === 'attacking')) {
             input = { up: false, down: false, left: false, right: false, shift: false };
         }
@@ -1011,6 +1012,9 @@ export class Insect {
             return;
         } else if (this.form === 'GIANT_WETA') {
             this.updateGiantWeta(input);
+            return;
+        } else if (this.form === 'CENTIPEDE') {
+            this.updateCentipede(input);
             return;
         } else if (this.form === 'LADYBUG') {
             this.updateLadybug(input);
@@ -2659,7 +2663,13 @@ export class Insect {
             return true;
         }
 
-        if (this.predationState !== 'idle') return false; // Busy
+        if (this.predationState !== 'idle') {
+            if (this.form === 'CENTIPEDE' && this.predationState === 'attacking') {
+                // Allow
+            } else {
+                return false;
+            }
+        }
 
         this.heldPrey = {
             pos: prey.pos.clone(),
@@ -2719,9 +2729,18 @@ export class Insect {
                 });
             }
         } else if (this.form === 'CENTIPEDE') {
+            console.log('Insect.js: startPredation - CENTIPEDE Block Entered');
+            this.predationState = 'attacking';
+            this.centipedeAttackTimer = 40;
+            this.centipedeMandibleOpen = 0;
+
+            // Surge (5x Speed)
+            const baseSpeed = 4.0 * this.scale;
+            const surgeSpeed = baseSpeed * 5;
             this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
-            this.predationState = 'lunging';
-            this.lungeTimer = 10;
+            this.vel = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(surgeSpeed);
+            this.speed = surgeSpeed;
+
             return true;
         } else if (this.form === 'COCKROACH') {
             this.predationState = 'attacking';
@@ -2735,6 +2754,92 @@ export class Insect {
         }
 
         return true;
+    }
+
+    updateCentipede(input) {
+        // Fix collision radius and Head Position (Critical for Main.js detection)
+        this.radius = 20 * this.scale;
+        this.headPos.x = this.pos.x;
+        this.headPos.y = this.pos.y;
+        this.width = this.radius * 2;
+        this.height = this.radius * 2;
+
+        // Debug inputs
+        if (!this._debugInput) {
+            console.log('Inputs:', Object.keys(input));
+            this._debugInput = true;
+        }
+
+        // Manual Surge (Shift Key / Space / Attack)
+        if ((input.shift || input.space || input.attack) && this.predationState === 'idle') {
+            console.log('Manual Surge Triggered');
+            this.predationState = 'attacking';
+            this.centipedeAttackTimer = 40;
+            this.centipedeMandibleOpen = 0;
+            const baseSpeed = 4.0 * this.scale;
+            this.speed = baseSpeed * 5; // Surge
+            // Maintain current angle
+            this.vel = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(this.speed);
+        }
+
+        if (this.predationState === 'attacking') {
+            console.log(`Insect.js: updateCentipede - Attacking. Timer: ${this.centipedeAttackTimer}, Speed: ${this.speed}`);
+        }
+        const s = this.scale;
+
+        // Effects Update
+        if (!this.centipedeEffects) this.centipedeEffects = [];
+        this.centipedeEffects.forEach(p => {
+            p.x += p.vx; p.y += p.vy;
+            p.vx *= 0.9; p.vy *= 0.9;
+            p.life -= 0.04;
+            p.size *= 0.92;
+        });
+        this.centipedeEffects = this.centipedeEffects.filter(p => p.life > 0);
+
+        if (!this.centipedeMandibleOpen) this.centipedeMandibleOpen = 0;
+
+        if (this.predationState === 'attacking') {
+            this.centipedeAttackTimer--;
+
+            // Particles (Head Burst)
+            let head = (this.centipedeSegments && this.centipedeSegments.length > 0) ? this.centipedeSegments[0] : null;
+            if (head && this.centipedeAttackTimer > 30) {
+                for (let i = 0; i < 2; i++) {
+                    let ang = Math.random() * Math.PI * 2;
+                    let spd = (Math.random() * 8 + 2) * s;
+                    this.centipedeEffects.push({
+                        x: head.x, y: head.y,
+                        vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+                        life: 1.0, size: (Math.random() * 6 + 2) * s
+                    });
+                }
+            }
+
+            // Mandibles
+            if (this.centipedeAttackTimer > 30) this.centipedeMandibleOpen += 0.2;
+            else this.centipedeMandibleOpen -= 0.15;
+            this.centipedeMandibleOpen = Math.max(0, Math.min(1, this.centipedeMandibleOpen));
+
+            // Consume Logic (Snap)
+            if (this.centipedeAttackTimer === 30) {
+                console.log('Insect.js: updateCentipede - TRIGGERING CONSUME');
+                if (this.onConsumePrey) {
+                    let impact = head ? new Vec2(head.x, head.y) : this.pos;
+                    this.onConsumePrey(impact);
+                    this.onConsumePrey = null;
+                }
+                this.heldPrey = null;
+            }
+
+            // End Condition (Low Speed or Timer)
+            if (this.speed < (4.0 * s * 1.5) && this.centipedeAttackTimer < 30) {
+                this.predationState = 'idle';
+            }
+        } else {
+            this.centipedeMandibleOpen *= 0.8;
+            if (this.centipedeMandibleOpen < 0.01) this.centipedeMandibleOpen = 0;
+        }
     }
 
     updatePredation() {
@@ -4045,6 +4150,28 @@ export class Insect {
             ctx.fill();
         });
 
+        // 1.5. Particles
+        if (this.centipedeEffects) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            this.centipedeEffects.forEach(p => {
+                ctx.beginPath();
+                const hue = 30 - (p.life * 20); // 10-30
+                const life = Math.max(0, p.life);
+                // Gradient local to particle
+                const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size);
+                gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, ${life})`);
+                gradient.addColorStop(1, `hsla(${hue}, 100%, 30%, 0)`);
+
+                ctx.fillStyle = gradient;
+                ctx.translate(p.x, p.y);
+                ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.translate(-p.x, -p.y);
+            });
+            ctx.restore();
+        }
+
         // 2. Legs (Draw from 1 to N-1)
 
         const LEG_LENGTH = 35 * this.scale;
@@ -4092,33 +4219,46 @@ export class Insect {
             ctx.fill();
 
             if (isHead) {
-                // Antennae
-                let wave = Math.sin(this.centipedeLegPhase * 0.5) * 0.2;
+                // Mandibles & Antennae
+                // Dynamic Mandibles
+                const headSize = size;
+                const openFactor = this.centipedeMandibleOpen || 0;
+
+                // Antennae (Wiggle if attacking)
                 ctx.strokeStyle = '#a33';
                 ctx.lineWidth = 2 * this.scale;
 
-                // L
+                // Speed up wiggle if attacking
+                const wiggleSpeed = (this.predationState === 'attacking') ? 2 : 0.5;
+                let wave = Math.sin(this.centipedeLegPhase * wiggleSpeed) * 0.2;
+
+                // L Antenna
                 ctx.beginPath();
                 ctx.moveTo(size * 0.5, -size * 0.4);
                 ctx.quadraticCurveTo(size * 2, -size * 1.5 + (wave * 10 * this.scale), size * 3.5, -size * 0.8);
                 ctx.stroke();
-                // R
+                // R Antenna
                 ctx.beginPath();
                 ctx.moveTo(size * 0.5, size * 0.4);
                 ctx.quadraticCurveTo(size * 2, size * 1.5 - (wave * 10 * this.scale), size * 3.5, size * 0.8);
                 ctx.stroke();
 
-                // Mandibles
+                // Mandibles (Dynamic)
                 ctx.fillStyle = '#111';
+                const baseOffset = 0.3;
+                const currentOffset = baseOffset + (openFactor * 0.5);
+
+                // Left
                 ctx.beginPath();
-                ctx.moveTo(size, -size * 0.3);
-                ctx.lineTo(size + 10 * this.scale, -size * 0.1);
+                ctx.moveTo(size, -size * currentOffset);
+                ctx.lineTo(size + (15 + openFactor * 10) * this.scale, -size * (0.1 + openFactor * 0.2));
                 ctx.lineTo(size, 0);
                 ctx.fill();
 
+                // Right
                 ctx.beginPath();
-                ctx.moveTo(size, size * 0.3);
-                ctx.lineTo(size + 10 * this.scale, size * 0.1);
+                ctx.moveTo(size, size * currentOffset);
+                ctx.lineTo(size + (15 + openFactor * 10) * this.scale, size * (0.1 + openFactor * 0.2));
                 ctx.lineTo(size, 0);
                 ctx.fill();
             }
