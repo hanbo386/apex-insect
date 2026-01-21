@@ -882,6 +882,7 @@ export class Insect {
         if (((this.form === 'SPIDER' || this.form === 'MANTIS') && this.predationState !== 'idle') ||
             (this.form === 'GIANT_WETA' && (this.wetaState === 'biting' || this.wetaState === 'attacking')) ||
             (this.form === 'LADYBUG' && this.ladybugState === 'attacking') ||
+            (this.form === 'PILLBUG' && this.predationState === 'attacking') ||
             (this.form === 'CENTIPEDE' && this.predationState === 'attacking') ||
             (this.form === 'STICK_INSECT' && this.predationState === 'attacking')) {
             input = { up: false, down: false, left: false, right: false, shift: false };
@@ -1018,6 +1019,9 @@ export class Insect {
             return;
         } else if (this.form === 'LADYBUG') {
             this.updateLadybug(input);
+            return;
+        } else if (this.form === 'PILLBUG') {
+            this.updatePillbug(input);
             return;
         } else if (this.form === 'CRICKET') {
             this.updateCricket(input);
@@ -1757,7 +1761,28 @@ export class Insect {
         ctx.save();
         ctx.shadowColor = 'rgba(0,0,0,0.4)';
         ctx.shadowBlur = 12;
+        ctx.shadowBlur = 12;
         ctx.shadowOffsetX = 5;
+
+        // Draw Particles (Dust)
+        if (this.pillBugEffects) {
+            this.pillBugEffects.forEach(p => {
+                ctx.save();
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life;
+                ctx.translate(p.x, p.y);
+                if (p.type === 'crumb') {
+                    ctx.rotate(p.life * 5);
+                    ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+                } else {
+                    ctx.beginPath(); ctx.arc(0, 0, p.size, 0, Math.PI * 2); ctx.fill();
+                }
+                ctx.restore();
+            });
+            ctx.globalAlpha = 1.0;
+        }
+
+        ctx.shadowOffsetY = 5;
         ctx.shadowOffsetY = 5;
 
         // Draw Legs first (under body)
@@ -1787,9 +1812,18 @@ export class Insect {
                 ctx.fill();
 
                 // Eyes
-                ctx.fillStyle = '#111';
+                // Eyes
+                if (this.predationState === 'attacking') {
+                    ctx.fillStyle = '#ff3300';
+                    ctx.shadowColor = '#ff3300';
+                    ctx.shadowBlur = 10;
+                } else {
+                    ctx.fillStyle = '#111';
+                    ctx.shadowBlur = 0;
+                }
                 ctx.beginPath(); ctx.arc(10 * this.scale, -radius * 0.6, 2.5 * this.scale, 0, Math.PI * 2); ctx.fill();
                 ctx.beginPath(); ctx.arc(10 * this.scale, radius * 0.6, 2.5 * this.scale, 0, Math.PI * 2); ctx.fill();
+                ctx.shadowBlur = 0;
 
                 this.drawPillBugAntennae(ctx, radius);
 
@@ -1879,6 +1913,91 @@ export class Insect {
         const scales = [0.8, 0.92, 1.0, 1.0, 0.98, 0.92, 0.85, 0.75, 0.6];
         const s = scales[index] !== undefined ? scales[index] : 0.8;
         return 10 * this.scale * s; // Reduced to 10 (Half size)
+    }
+
+    updatePillbug(input) {
+        const s = this.scale;
+        const maxSpeed = 3.5 * s;
+
+        // Effects Update
+        if (!this.pillBugEffects) this.pillBugEffects = [];
+        for (let i = this.pillBugEffects.length - 1; i >= 0; i--) {
+            let p = this.pillBugEffects[i];
+            p.x += p.vx; p.y += p.vy;
+            p.vx *= 0.92; p.vy *= 0.92;
+            p.life -= 0.05;
+            p.size *= 0.95;
+            if (p.life <= 0) this.pillBugEffects.splice(i, 1);
+        }
+
+        if (this.pillBugCooldown > 0) this.pillBugCooldown--;
+
+        // Manual Trigger (Shift only, prevents space/UI conflict)
+        if (input.shift && this.predationState === 'idle' && this.pillBugCooldown <= 0) {
+            this.predationState = 'attacking';
+            this.pillBugAttackTimer = 0;
+        }
+
+        if (this.predationState === 'attacking') {
+            this.pillBugAttackTimer += 0.8;
+            this.speed *= 0.8;
+
+            // Thrash
+            const thrash = Math.sin(this.pillBugAttackTimer) * 0.4 + Math.cos(this.pillBugAttackTimer * 2.5) * 0.2;
+            this.angle += thrash * 0.15;
+
+            // Particles (Dust) - Tearing up ground
+            if (Math.random() > 0.8) {
+                const headX = this.pos.x + Math.cos(this.angle) * 15 * s;
+                const headY = this.pos.y + Math.sin(this.angle) * 15 * s;
+                const sprayAngle = this.angle + Math.PI + (Math.random() - 0.5) * 1.5;
+                const spd = (3 + Math.random() * 3) * s;
+                this.pillBugEffects.push({
+                    x: headX, y: headY,
+                    vx: Math.cos(sprayAngle) * spd, vy: Math.sin(sprayAngle) * spd,
+                    life: 1.0, size: (Math.random() * 4 + 2) * s,
+                    type: Math.random() > 0.5 ? 'dust' : 'crumb',
+                    color: 'rgba(120, 100, 80, 0.6)'
+                });
+            }
+
+            // Consume (Trigger Once)
+            if (this.pillBugAttackTimer > 20 && this.onConsumePrey && this.heldPrey) {
+                this.onConsumePrey(this.heldPrey.pos);
+                this.onConsumePrey = null; // Ensure single XP reward
+                this.heldPrey = null;
+            }
+
+            if (this.pillBugAttackTimer > 100) {
+                this.predationState = 'idle';
+                this.pillBugCooldown = 20;
+            }
+        } else {
+            // Movement
+            let targetDx = 0, targetDy = 0;
+            if (input.up) targetDy = -1;
+            if (input.down) targetDy = 1;
+            if (input.left) targetDx = -1;
+            if (input.right) targetDx = 1;
+
+            if (targetDx !== 0 || targetDy !== 0) {
+                const targetAngle = Math.atan2(targetDy, targetDx);
+                let diff = targetAngle - this.angle;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                this.angle += diff * 0.1;
+                this.speed += (maxSpeed - this.speed) * 0.1;
+            } else {
+                this.speed *= 0.9;
+            }
+            this.pos.x += Math.cos(this.angle) * this.speed;
+            this.pos.y += Math.sin(this.angle) * this.speed;
+            this.walkCycle += this.speed * 0.2;
+        }
+
+        // Sync Head
+        this.headPos.x = this.pos.x;
+        this.headPos.y = this.pos.y;
     }
 
     updateVisuals() {
@@ -2701,6 +2820,10 @@ export class Insect {
             frontRight.overrideTarget = this.heldPrey.pos;
         } else if (this.form === 'MANTIS' && this.mantisLegs) {
             this.triggerMantisAttack(prey.pos);
+            return true;
+        } else if (this.form === 'PILLBUG') {
+            this.predationState = 'attacking';
+            this.pillBugAttackTimer = 0;
             return true;
         } else if (this.form === 'SCORPION') {
             // Trigger Charge Attack
