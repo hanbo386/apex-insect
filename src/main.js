@@ -921,10 +921,11 @@ function gameLoop() {
     // Draw Creeps
     creeps.forEach(c => c.draw(ctx));
 
-    player.draw(ctx);
-
-    // Draw Particles
+    // Draw Particles (Residue/Debris) - BEFORE Player to prevent covering
     particles.forEach(p => p.draw(ctx));
+
+    // Draw Player (On Top)
+    player.draw(ctx);
 
     // Draw Texts
     texts.forEach(t => t.draw(ctx));

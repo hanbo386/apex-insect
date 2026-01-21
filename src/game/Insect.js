@@ -1015,6 +1015,9 @@ export class Insect {
         } else if (this.form === 'LADYBUG') {
             this.updateLadybug(input);
             return;
+        } else if (this.form === 'CRICKET') {
+            this.updateCricket(input);
+            return;
         }
 
         // --- 身体跟随 ---
@@ -1413,27 +1416,29 @@ export class Insect {
 
         // 左大颚
         ctx.save();
-        ctx.translate(-size * 0.15, -extendAmount * 5 * this.scale);
+        ctx.translate(-size * 0.15, -extendAmount * 3 * this.scale);
         ctx.rotate(-0.2 - openAmount * 0.5);
 
         ctx.beginPath();
         ctx.moveTo(0, 0);
-        ctx.quadraticCurveTo(-5 * this.scale, -10 * this.scale, 2 * this.scale, -15 * this.scale);
-        ctx.lineTo(6 * this.scale, -10 * this.scale);
-        ctx.lineTo(5 * this.scale, 0);
+        // Shrink by ~40%
+        ctx.quadraticCurveTo(-3 * this.scale, -6 * this.scale, 1 * this.scale, -9 * this.scale);
+        ctx.lineTo(4 * this.scale, -6 * this.scale);
+        ctx.lineTo(3 * this.scale, 0);
         ctx.fill();
         ctx.restore();
 
         // 右大颚
         ctx.save();
-        ctx.translate(size * 0.15, -extendAmount * 5 * this.scale);
+        ctx.translate(size * 0.15, -extendAmount * 3 * this.scale);
         ctx.rotate(0.2 + openAmount * 0.5);
 
         ctx.beginPath();
         ctx.moveTo(0, 0);
-        ctx.quadraticCurveTo(5 * this.scale, -10 * this.scale, -2 * this.scale, -15 * this.scale);
-        ctx.lineTo(-6 * this.scale, -10 * this.scale);
-        ctx.lineTo(-5 * this.scale, 0);
+        // Shrink by ~40%
+        ctx.quadraticCurveTo(3 * this.scale, -6 * this.scale, -1 * this.scale, -9 * this.scale);
+        ctx.lineTo(-4 * this.scale, -6 * this.scale);
+        ctx.lineTo(-3 * this.scale, 0);
         ctx.fill();
         ctx.restore();
 
@@ -1598,9 +1603,9 @@ export class Insect {
         let isAttacking = this.ladybugAttackTimer > 0;
 
         // Standard Movement Config
-        let accel = 1.2 * s;
+        let accel = 0.9 * s; // Reduced by 30%
         let friction = 0.85;
-        let maxSpeed = 3.5 * s;
+        let maxSpeed = 2.5 * s; // Reduced by ~30% from 3.5
 
         let ax = 0; let ay = 0;
 
@@ -1611,17 +1616,12 @@ export class Insect {
             // Phases: 0-5 Windup, 5 Lunge/Consume, 5-25 Slide
             let totalDuration = 25;
             let elapsed = totalDuration - this.ladybugAttackTimer;
-
-            // DEBUG LOG
-            // console.log('LADYBUG UPDATE:', { timer: this.ladybugAttackTimer, elapsed });
-
             let windupTime = 5;
 
             if (elapsed < windupTime) {
                 // WINDUP: Strict Stop (Heavy Friction)
                 this.vel = this.vel.mult(0.5);
             } else if (elapsed === windupTime) {
-                console.log('LADYBUG CONSUME TRIGGERED at frame 5');
                 // LUNGE Trigger
                 let lungePower = 15.0 * s;
                 this.vel = new Vec2(Math.cos(this.angle) * lungePower, Math.sin(this.angle) * lungePower);
@@ -2613,7 +2613,6 @@ export class Insect {
 
         // --- LADYBUG: Single-Shot Attack (Like Tarantula) ---
         if (this.form === 'LADYBUG') {
-            console.log('LADYBUG START PREDATION ENTRY. Timer:', this.ladybugAttackTimer);
             // If already attacking, let the animation finish. Do not reset.
             if (this.ladybugAttackTimer > 0) return true;
 
@@ -2638,6 +2637,25 @@ export class Insect {
             };
             this.onConsumePrey = consumeCallback;
 
+            return true;
+        }
+
+        if (this.form === 'CRICKET') {
+            if (this.cricketAttackTimer > 0) return true;
+
+            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
+
+            this.cricketAttackTimer = 40;
+            this.predationState = 'attacking';
+
+            this.heldPrey = {
+                pos: prey.pos.clone(),
+                angle: prey.angle,
+                scale: prey.scale || 1.0,
+                color: prey.color || prey.colors?.thorax || '#444',
+                size: (prey.size || 5) * (prey.scale || 1)
+            };
+            this.onConsumePrey = consumeCallback;
             return true;
         }
 
@@ -2825,8 +2843,186 @@ export class Insect {
 
     }
 
+    updateCricket(input) {
+        const s = this.scale;
+
+        // Init Props if missing
+        if (!this.cricketAttackTimer) this.cricketAttackTimer = 0;
+        if (!this.cricketMandibleState) this.cricketMandibleState = 0;
+        if (!this.cricketEffects) this.cricketEffects = [];
+        if (!this.cricketAntennaTimer) this.cricketAntennaTimer = 0;
+
+        let shouldLockInput = false;
+
+        // --- Attack Logic ---
+        if (this.cricketAttackTimer > 0) {
+            this.cricketAttackTimer--;
+
+            // Mandible Animation (0.0 - 1.0)
+            let progress = 1 - (this.cricketAttackTimer / 40);
+            if (progress < 0.2) {
+                this.cricketMandibleState = progress / 0.2; // Open fast
+            } else if (progress < 0.4) {
+                this.cricketMandibleState = 1; // Hold open
+            } else {
+                this.cricketMandibleState = 1 - ((progress - 0.4) / 0.6); // Close slow
+            }
+
+            // Frame 1: Trigger Lunge & Effects
+            // startPredation sets timer to 40. First update frame will be 39.
+            if (this.cricketAttackTimer === 39) {
+                // Lunge Physics
+                let lungeForce = 12 * s;
+                let lungeVel = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(lungeForce);
+                this.vel = this.vel.add(lungeVel);
+
+                // Shockwave Effect
+                this.cricketEffects.push({
+                    type: 'shockwave',
+                    x: this.pos.x, y: this.pos.y,
+                    angle: this.angle,
+                    radius: 20 * s,
+                    alpha: 1.0,
+                    width: 30 * s
+                });
+
+                // Dust Effect (Rear)
+                let rearDir = new Vec2(Math.cos(this.angle + Math.PI), Math.sin(this.angle + Math.PI));
+                let rearPos = this.pos.add(rearDir.mult(30 * s));
+                for (let i = 0; i < 16; i++) {
+                    let spread = (Math.random() - 0.5) * 1.5;
+                    let dir = this.angle + Math.PI + spread;
+                    let speed = (Math.random() * 8 + 4) * s;
+                    this.cricketEffects.push({
+                        type: 'dust',
+                        x: rearPos.x, y: rearPos.y,
+                        vx: Math.cos(dir) * speed, vy: Math.sin(dir) * speed,
+                        size: (Math.random() * 12 + 5) * s,
+                        life: 1.0
+                    });
+                }
+            }
+
+            // Consume Prey Trigger (Frame 15 -> Timer 25)
+            // When mandibles start closing
+            if (this.cricketAttackTimer === 25) {
+                if (this.onConsumePrey && this.heldPrey) {
+                    this.onConsumePrey(this.heldPrey.pos); // Kill callback
+                    this.heldPrey = null;
+                }
+            }
+
+            // Lock Input during heavy lunge phase
+            if (this.cricketAttackTimer > 10) {
+                shouldLockInput = true;
+            }
+
+        } else {
+            this.cricketMandibleState = 0;
+            if (this.predationState === 'attacking') this.predationState = 'idle';
+        }
+
+        // --- Effects Update ---
+        for (let i = this.cricketEffects.length - 1; i >= 0; i--) {
+            let e = this.cricketEffects[i];
+            if (e.type === 'shockwave') {
+                e.radius += 12 * s;
+                e.width *= 0.9;
+                e.alpha -= 0.04;
+                if (e.alpha <= 0) this.cricketEffects.splice(i, 1);
+            } else if (e.type === 'dust') {
+                e.x += e.vx; e.y += e.vy;
+                e.vx *= 0.9; e.vy *= 0.9;
+                e.life -= 0.03;
+                e.size *= 0.96;
+                if (e.life <= 0) this.cricketEffects.splice(i, 1);
+            }
+        }
+
+        // --- Movement Logic ---
+        let accel = 0.8 * s;
+        let friction = 0.92;
+        let maxSpeed = 4.0 * s;
+        let turnSpeed = 0.08;
+
+        if (!shouldLockInput) {
+            let dx = 0; let dy = 0;
+            if (input.up) dy -= 1;
+            if (input.down) dy += 1;
+            if (input.left) dx -= 1;
+            if (input.right) dx += 1;
+
+            if (dx !== 0 || dy !== 0) {
+                let targetAngle = Math.atan2(dy, dx);
+                let diff = targetAngle - this.angle;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                this.angle += diff * turnSpeed;
+
+                // Move forward in facing direction
+                if (this.vel.mag() < maxSpeed) {
+                    this.vel.x += Math.cos(this.angle) * accel;
+                    this.vel.y += Math.sin(this.angle) * accel;
+                }
+            }
+        }
+
+        this.vel = this.vel.mult(friction);
+        this.pos = this.pos.add(this.vel);
+
+        // --- Legs Update ---
+        if (this.cricketLegs) {
+            let stepThreshold = 40 * s + this.vel.mag() * 2;
+            this.cricketLegs.forEach(leg => {
+                leg.updateScale(s);
+                leg.update(this.pos, this.angle, this.vel, stepThreshold);
+            });
+        }
+
+        this.cricketAntennaTimer += 0.1 + (this.vel.mag() * 0.1);
+
+        // Update general body parts for collision/eating checks
+        this.thoraxPos = this.pos;
+        this.headPos = this.pos.add(new Vec2(Math.cos(this.angle) * 40 * s, Math.sin(this.angle) * 40 * s));
+    }
+
     drawCricket(ctx) {
         ctx.save();
+
+        // 0. Effects (Ground)
+        if (this.cricketEffects) {
+            this.cricketEffects.forEach(e => {
+                if (e.type === 'shockwave') {
+                    ctx.save();
+                    ctx.translate(e.x, e.y);
+                    ctx.rotate(e.angle);
+
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = "rgba(255, 255, 255, 0.9)";
+
+                    ctx.beginPath();
+                    ctx.arc(0, 0, e.radius, -Math.PI / 2.5, Math.PI / 2.5);
+                    ctx.strokeStyle = `rgba(255, 255, 255, ${e.alpha})`;
+                    ctx.lineWidth = e.width;
+                    ctx.lineCap = "round";
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.arc(0, 0, e.radius * 0.85, -Math.PI / 3.5, Math.PI / 3.5);
+                    ctx.strokeStyle = `rgba(255, 255, 255, ${e.alpha})`;
+                    ctx.lineWidth = e.width * 0.4;
+                    ctx.stroke();
+                    ctx.restore();
+                } else if (e.type === 'dust') {
+                    ctx.fillStyle = `rgba(90, 70, 40, ${e.life})`;
+                    ctx.beginPath();
+                    ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
+
+        if (this.heldPrey) this.drawHeldPrey(ctx);
 
         // 1. Legs (Under Body)
         this.cricketLegs.forEach(leg => {
@@ -2876,7 +3072,28 @@ export class Insect {
             ctx.stroke();
         }
 
-        // 3. Body Parts (Back to Front)
+        // 3. Mandibles
+        ctx.fillStyle = "#1a0f00"; // Deep Black
+        for (let side = -1; side <= 1; side += 2) {
+            ctx.save();
+            ctx.translate(45, side * 6); // Front of Head
+
+            // Rotation based on State
+            let baseRot = side * Math.PI * 0.25;
+            let openRot = side * -Math.PI * 0.1;
+            let currentRot = baseRot + (openRot - baseRot) * (this.cricketMandibleState || 0);
+
+            ctx.rotate(currentRot);
+
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.bezierCurveTo(10, 0, 15, side * 5, 20, side * 2); // Outer
+            ctx.bezierCurveTo(15, side * 0, 10, side * 0, 0, 0);   // Inner
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // 4. Body Parts (Back to Front)
 
         // Abdomen
         ctx.fillStyle = "#4e342e"; // Dark Brown
