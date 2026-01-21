@@ -881,7 +881,8 @@ export class Insect {
         // Immobilize if eating (Spider / Mantis Grapple / Scorpion Strike / Weta Bite)
         if (((this.form === 'SPIDER' || this.form === 'MANTIS') && this.predationState !== 'idle') ||
             (this.form === 'SCORPION' && this.scorpionAttackState !== 'none') ||
-            (this.form === 'GIANT_WETA' && (this.wetaState === 'biting' || this.wetaState === 'attacking'))) {
+            (this.form === 'GIANT_WETA' && (this.wetaState === 'biting' || this.wetaState === 'attacking')) ||
+            (this.form === 'LADYBUG' && this.ladybugState === 'attacking')) {
             input = { up: false, down: false, left: false, right: false, shift: false };
         }
 
@@ -1010,6 +1011,9 @@ export class Insect {
             return;
         } else if (this.form === 'GIANT_WETA') {
             this.updateGiantWeta(input);
+            return;
+        } else if (this.form === 'LADYBUG') {
+            this.updateLadybug(input);
             return;
         }
 
@@ -1258,51 +1262,105 @@ export class Insect {
     }
 
     // --- Ladybug Specific Drawing Logic ---
+
+    // Overhauled Draw Ladybug
     drawLadybug(ctx) {
         ctx.save();
         ctx.translate(this.pos.x, this.pos.y);
-        ctx.rotate(this.angle + Math.PI / 2); // Canvas 0度通常向右，我们需要修正旋转以便计算方便
+        ctx.rotate(this.angle + Math.PI / 2);
 
-        let size = 12.5 * this.scale; // Base size adapted to scale (Reduced by half)
+        let size = 12.5 * this.scale;
 
         // 阴影
         ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
         ctx.beginPath();
-        ctx.ellipse(0, 5 * this.scale, size * 0.9, size * 1.1, 0, 0, Math.PI * 2);
+        const shadowOffset = (this.ladybugState === 'attacking' ? 3 : 0) * this.scale;
+        ctx.ellipse(0, (5 * this.scale) + shadowOffset, size * 0.9, size * 1.1, 0, 0, Math.PI * 2);
         ctx.fill();
 
         // --- 腿部 (Legs) ---
         this.drawLadybugLegs(ctx, size);
 
-        // --- 身体 (Body/Elytra) ---
-        // 鞘翅红色渐变
-        const bodyGrad = ctx.createRadialGradient(-5 * this.scale, -5 * this.scale, 2 * this.scale, 0, 0, size * 1.2);
-        bodyGrad.addColorStop(0, '#ff4d4d');
-        bodyGrad.addColorStop(0.4, '#cc0000');
-        bodyGrad.addColorStop(1, '#800000');
-
-        ctx.fillStyle = bodyGrad;
+        // --- 腹部 (Abdomen) ---
+        ctx.fillStyle = '#2a1a10';
         ctx.beginPath();
-        // 稍微拉长的半球体
-        ctx.ellipse(0, 5 * this.scale, size * 0.95, size * 1.1, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, 5 * this.scale, size * 0.8, size * 1.0, 0, 0, Math.PI * 2);
         ctx.fill();
+        // 纹理
+        ctx.strokeStyle = '#3d2618';
+        ctx.lineWidth = 1 * this.scale;
+        for (let i = 0; i < 5; i++) {
+            ctx.beginPath();
+            ctx.arc(0, 5 * this.scale, size * (0.3 + i * 0.15), -0.5, Math.PI + 0.5, true);
+            ctx.stroke();
+        }
 
-        // 鞘翅中间的分隔线
-        ctx.strokeStyle = 'rgba(50, 0, 0, 0.3)';
+        // --- 攻击大颚 (Mandibles) ---
+        this.drawLadybugMandibles(ctx, size);
+
+        // --- 鞘翅 (Elytra) ---
+        const pivotY = -size * 0.3;
+        const realWingAngle = Math.max(0, (this.wingOpenAngle || 0) + (this.wingFlutter || 0));
+
+        // 绘制单个鞘翅的函数
+        const drawFullShell = () => {
+            const bodyGrad = ctx.createRadialGradient(-5 * this.scale, -5 * this.scale, 2 * this.scale, 0, 0, size * 1.2);
+            bodyGrad.addColorStop(0, '#ff4d4d');
+            bodyGrad.addColorStop(0.4, '#cc0000');
+            bodyGrad.addColorStop(1, '#800000');
+
+            ctx.fillStyle = bodyGrad;
+            ctx.beginPath();
+            ctx.ellipse(0, 5 * this.scale, size * 0.95, size * 1.1, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            this.drawLadybugSpots(ctx, size);
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.beginPath();
+            ctx.ellipse(-size * 0.4, 0, size * 0.2, size * 0.4, 0.2, 0, Math.PI * 2);
+            ctx.fill();
+        };
+
+        // --- 左翅 ---
+        ctx.save();
+        ctx.translate(0, pivotY);
+        ctx.rotate(realWingAngle);
+        ctx.translate(0, -pivotY);
+
+        ctx.beginPath();
+        ctx.rect(-size * 2, -size * 2, size * 2, size * 5); // Clip Left
+        ctx.clip();
+
+        drawFullShell();
+
+        ctx.strokeStyle = 'rgba(40, 0, 0, 0.3)';
         ctx.lineWidth = 1 * this.scale;
         ctx.beginPath();
         ctx.moveTo(0, -size * 0.2);
         ctx.lineTo(0, size * 1.6);
         ctx.stroke();
+        ctx.restore();
 
-        // 斑点 (Spots)
-        this.drawLadybugSpots(ctx, size);
+        // --- 右翅 ---
+        ctx.save();
+        ctx.translate(0, pivotY);
+        ctx.rotate(-realWingAngle);
+        ctx.translate(0, -pivotY);
 
-        // 高光 (Specular Highlight) - 让甲壳看起来硬且亮
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
         ctx.beginPath();
-        ctx.ellipse(-size * 0.4, 0, size * 0.2, size * 0.4, 0.2, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.rect(0, -size * 2, size * 2, size * 5); // Clip Right
+        ctx.clip();
+
+        drawFullShell();
+
+        ctx.strokeStyle = 'rgba(40, 0, 0, 0.3)';
+        ctx.lineWidth = 1 * this.scale;
+        ctx.beginPath();
+        ctx.moveTo(0, -size * 0.2);
+        ctx.lineTo(0, size * 1.6);
+        ctx.stroke();
+        ctx.restore();
 
         // --- 头部 (Head) ---
         ctx.fillStyle = '#111';
@@ -1310,14 +1368,74 @@ export class Insect {
         ctx.arc(0, -size * 0.8, size * 0.55, Math.PI, 0);
         ctx.fill();
 
-        // 头部光泽
         ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
         ctx.beginPath();
         ctx.arc(size * 0.2, -size * 1.0, size * 0.1, 0, Math.PI * 2);
         ctx.fill();
 
-        // --- 触角 (Antennae) ---
+        // --- 触角 ---
         this.drawLadybugAntennae(ctx, size);
+
+        ctx.restore();
+
+        if (this.heldPrey) {
+            this.drawHeldPrey(ctx);
+        }
+    }
+
+    drawLadybugMandibles(ctx, size) {
+        ctx.fillStyle = '#1a1a1a';
+
+        let openAmount = 0.1;
+        let extendAmount = 0;
+
+        if (this.ladybugAttackTimer > 0) {
+            let limit = 25; // Duration
+            let windup = 5;
+            let current = 25 - this.ladybugAttackTimer; // Frames elapsed
+
+            if (current > windup) {
+                // attacking lunge
+                // Lunge open
+                openAmount = 1.0;
+                extendAmount = 1.0;
+            } else {
+                // windup closed
+                openAmount = -0.5;
+                extendAmount = 0;
+            }
+        }
+
+        const headY = -size * 1.2;
+
+        ctx.save();
+        ctx.translate(0, headY);
+
+        // 左大颚
+        ctx.save();
+        ctx.translate(-size * 0.15, -extendAmount * 5 * this.scale);
+        ctx.rotate(-0.2 - openAmount * 0.5);
+
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(-5 * this.scale, -10 * this.scale, 2 * this.scale, -15 * this.scale);
+        ctx.lineTo(6 * this.scale, -10 * this.scale);
+        ctx.lineTo(5 * this.scale, 0);
+        ctx.fill();
+        ctx.restore();
+
+        // 右大颚
+        ctx.save();
+        ctx.translate(size * 0.15, -extendAmount * 5 * this.scale);
+        ctx.rotate(0.2 + openAmount * 0.5);
+
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(5 * this.scale, -10 * this.scale, -2 * this.scale, -15 * this.scale);
+        ctx.lineTo(-6 * this.scale, -10 * this.scale);
+        ctx.lineTo(-5 * this.scale, 0);
+        ctx.fill();
+        ctx.restore();
 
         ctx.restore();
     }
@@ -1429,6 +1547,8 @@ export class Insect {
         const baseY = -size * 1.2;
 
         // 随机微动 + 随速度后掠
+        // Use member variable for consistency
+        this.antennaTimer = (this.antennaTimer || 0);
         const twitchL = Math.sin(this.antennaTimer) * 0.1;
         const twitchR = Math.cos(this.antennaTimer * 1.3) * 0.1;
 
@@ -1437,7 +1557,7 @@ export class Insect {
         ctx.moveTo(-baseX, baseY);
         ctx.quadraticCurveTo(
             -baseX * 2, baseY - 10 * this.scale,
-            -baseX * 3 + twitchL * 10, baseY - 5 * this.scale + Math.abs(this.speed) * 2
+            -baseX * 3 + twitchL * 10 * this.scale, baseY - 5 * this.scale + Math.abs(this.speed) * 2
         );
         ctx.stroke();
 
@@ -1446,9 +1566,185 @@ export class Insect {
         ctx.moveTo(baseX, baseY);
         ctx.quadraticCurveTo(
             baseX * 2, baseY - 10 * this.scale,
-            baseX * 3 + twitchR * 10, baseY - 5 * this.scale + Math.abs(this.speed) * 2
+            baseX * 3 + twitchR * 10 * this.scale, baseY - 5 * this.scale + Math.abs(this.speed) * 2
         );
         ctx.stroke();
+    }
+
+    triggerLadybugAttack() {
+        if (this.ladybugAttackTimer > 0 || (this.ladybugCooldown || 0) > 0) return false;
+
+        this.ladybugState = 'attacking'; // For drawing reference
+        this.ladybugAttackTimer = 25; // Total Duration
+        this.ladybugCooldown = 45;
+        this.predationState = 'attacking'; // Global state
+        this.wasAttacking = true;
+        return true;
+    }
+
+    updateLadybug(input) {
+        const s = this.scale;
+
+        // Init properties
+        if (!this.ladybugAttackTimer) this.ladybugAttackTimer = 0;
+        if (!this.ladybugCooldown) this.ladybugCooldown = 0;
+        if (!this.wingOpenAngle) this.wingOpenAngle = 0;
+        if (!this.wingFlutter) this.wingFlutter = 0;
+        if (this.antennaTimer === undefined) this.antennaTimer = 0;
+
+        // Cooldown
+        if (this.ladybugCooldown > 0) this.ladybugCooldown--;
+
+        let isAttacking = this.ladybugAttackTimer > 0;
+
+        // Standard Movement Config
+        let accel = 1.2 * s;
+        let friction = 0.85;
+        let maxSpeed = 3.5 * s;
+
+        let ax = 0; let ay = 0;
+
+        // --- ATTACK LOGIC ---
+        if (isAttacking) {
+            this.ladybugAttackTimer--;
+
+            // Phases: 0-5 Windup, 5 Lunge/Consume, 5-25 Slide
+            let totalDuration = 25;
+            let elapsed = totalDuration - this.ladybugAttackTimer;
+
+            // DEBUG LOG
+            // console.log('LADYBUG UPDATE:', { timer: this.ladybugAttackTimer, elapsed });
+
+            let windupTime = 5;
+
+            if (elapsed < windupTime) {
+                // WINDUP: Strict Stop (Heavy Friction)
+                this.vel = this.vel.mult(0.5);
+            } else if (elapsed === windupTime) {
+                console.log('LADYBUG CONSUME TRIGGERED at frame 5');
+                // LUNGE Trigger
+                let lungePower = 15.0 * s;
+                this.vel = new Vec2(Math.cos(this.angle) * lungePower, Math.sin(this.angle) * lungePower);
+
+                // CONSUME
+                if (this.onConsumePrey && this.heldPrey) {
+                    let strikePos = this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(20 * s));
+                    this.onConsumePrey(strikePos);
+                    this.onConsumePrey = null;
+                    this.heldPrey = null;
+                } else if (this.heldPrey) {
+                    this.heldPrey = null;
+                }
+            }
+            // No Input Processing Here!
+
+        } else {
+            // NORMAL MOVEMENT
+            if (this.predationState === 'attacking') this.predationState = 'idle';
+            if (this.ladybugState === 'attacking') this.ladybugState = 'idle';
+
+            // Input Logic - DEFINED HERE ONLY
+            let keyW = input.up; let keyS = input.down;
+            let keyA = input.left; let keyD = input.right;
+
+            if (input.shift && this.stamina > 0) {
+                accel *= 1.8;
+                maxSpeed *= 1.8;
+                this.stamina -= 0.5;
+            } else if (this.stamina < this.maxStamina) {
+                this.stamina += 0.5;
+            }
+
+            if (keyW) ay -= accel;
+            if (keyS) ay += accel;
+            if (keyA) ax -= accel;
+            if (keyD) ax += accel;
+
+            // Turn Logic (Velocity based)
+            if (this.vel.mag() > 0.1) {
+                let targetAngle = Math.atan2(this.vel.y, this.vel.x);
+                let diff = targetAngle - this.angle;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                this.angle += diff * 0.15;
+            }
+        }
+
+        // Physics Integration
+        this.vel.x += ax;
+        this.vel.y += ay;
+
+        // Cap Speed
+        let currentSpeed = this.vel.mag();
+        if (!isAttacking && currentSpeed > maxSpeed) {
+            this.vel = this.vel.normalize().mult(maxSpeed);
+        }
+
+        this.vel = this.vel.mult(friction);
+        this.pos = this.pos.add(this.vel);
+
+        // -----------------
+        // ANIMATION & PROPS
+        // -----------------
+
+        // Antennae
+        this.antennaTimer += 0.05;
+
+        // Wing Dynamics
+        let targetWingAngle = 0;
+        let flutterSpeed = 0;
+        let flutterAmp = 0;
+
+        if (isAttacking) {
+            let elapsed = 25 - this.ladybugAttackTimer;
+            if (elapsed > 5) { // Lunge phase
+                targetWingAngle = 0.5;
+                flutterSpeed = 1.5; // Fixed: Missing assignment
+                flutterAmp = 0.08;
+            } else { // Windup
+                targetWingAngle = 0.1;
+            }
+        } else if (this.vel.mag() > 2.0 * s) {
+            targetWingAngle = 0.05;
+            flutterAmp = 0.01;
+        } else {
+            targetWingAngle = 0.02 * Math.sin(Date.now() / 500);
+        }
+
+        // Lerp Wing Angle
+        this.wingOpenAngle = this.wingOpenAngle + (targetWingAngle - this.wingOpenAngle) * 0.1;
+
+        // Flutter
+        if (flutterAmp > 0) {
+            this.wingFlutter = Math.sin(Date.now() * flutterSpeed) * flutterAmp;
+        } else {
+            this.wingFlutter = 0;
+        }
+
+        // --- Walk Cycle ---
+        if (this.vel.mag() > 0.1) {
+            this.walkCycle += 0.1 * (this.vel.mag() / (this.maxSpeed * this.scale));
+        }
+
+        // Standard body follow
+        let headTarget = this.pos.add(new Vec2(Math.cos(this.angle) * 3.5 * this.scale, Math.sin(this.angle) * 3.5 * this.scale));
+        this.headPos = this.headPos.add(headTarget.sub(this.headPos).mult(0.5));
+
+        // Update Legs
+        if (this.legs.length >= 6) {
+            let groupAMoving = this.ladybugState !== 'attacking' && (this.legs[0].isMoving || this.legs[4].isMoving || this.legs[2].isMoving);
+            let groupBMoving = this.ladybugState !== 'attacking' && (this.legs[3].isMoving || this.legs[1].isMoving || this.legs[5].isMoving);
+            let canGroupAMove = !groupBMoving;
+            let canGroupBMove = !groupAMoving;
+
+            this.legs.forEach(leg => {
+                let canMove = false;
+                if ([0, 4, 2].includes(leg.id)) canMove = canGroupAMove;
+                else canMove = canGroupBMove;
+
+                leg.update(this.thoraxPos, this.angle, this.vel, canMove);
+            });
+        }
     }
 
     // --- Pill Bug Specific Drawing Logic ---
@@ -2303,14 +2599,45 @@ export class Insect {
             return 80 * this.scale;
         } else if (this.form === 'COCKROACH') {
             return 40 * this.scale;
+        } else if (this.form === 'LADYBUG') {
+            return 50 * this.scale;
         }
         return 25 * this.scale;
     }
 
     startPredation(prey, consumeCallback) {
-        // Allow Tarantula to eat during its attack lunge
         if (this.form === 'TARANTULA' && this.predationState === 'attacking') {
             if (consumeCallback) consumeCallback(prey.pos);
+            return true;
+        }
+
+        // --- LADYBUG: Single-Shot Attack (Like Tarantula) ---
+        if (this.form === 'LADYBUG') {
+            console.log('LADYBUG START PREDATION ENTRY. Timer:', this.ladybugAttackTimer);
+            // If already attacking, let the animation finish. Do not reset.
+            if (this.ladybugAttackTimer > 0) return true;
+
+            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
+
+            // START ANIMATION
+            this.ladybugAttackTimer = 25;
+            this.ladybugState = 'attacking';
+            this.predationState = 'attacking';
+            this.ladybugCooldown = 45;
+            this.wasAttacking = true;
+
+            // Visuals
+            this.heldPrey = {
+                pos: prey.pos.clone(),
+                angle: prey.angle,
+                scale: prey.scale || 1.0,
+                color: prey.color || prey.colors?.thorax || '#444',
+                form: prey.form || 'ANT',
+                colors: prey.colors,
+                size: (prey.size || 5) * (prey.scale || 1)
+            };
+            this.onConsumePrey = consumeCallback;
+
             return true;
         }
 
@@ -3583,87 +3910,7 @@ export class Insect {
 
 
 
-    startPredation(prey, consumeCallback) {
-        // Allow Tarantula to eat during its attack lunge
-        if (this.form === 'TARANTULA' && this.predationState === 'attacking') {
-            if (consumeCallback) consumeCallback(prey.pos);
-            return true;
-        }
 
-        // Allow Scorpion to eat during its charge attack
-        if (this.form === 'SCORPION' && this.scorpionAttackState !== 'none') {
-            if (consumeCallback) consumeCallback(prey.pos);
-            return true;
-        }
-
-        if (this.predationState !== 'idle') return false; // Busy
-
-        this.heldPrey = {
-            pos: prey.pos.clone(),
-            angle: prey.angle,
-            scale: prey.scale || 1.0,
-            color: prey.color || prey.colors?.thorax || '#444',
-            form: prey.form || 'ANT',
-            colors: prey.colors,
-            size: (prey.size || 5) * (prey.scale || 1)
-        };
-        this.onConsumePrey = consumeCallback;
-        this.predationTimer = 0;
-
-        if (this.form === 'TARANTULA') {
-            this.predationState = 'attacking';
-            this.tarantulaAttackTimer = TARANTULA_SETTINGS.attackDuration;
-            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
-            // Don't consume yet, wait for lunge apex in updateTarantula
-            return true;
-        }
-
-        // Note: Removed forced 'attacking' state here.
-        // Normal contact will now fall through to generic 'lunging' below.
-        if (this.form === 'SPIDER' && this.spiderLegs.length >= 2) {
-            this.predationState = 'reaching';
-            // Front legs reach out
-            const frontLeft = this.spiderLegs[0];
-            const frontRight = this.spiderLegs[1];
-            frontLeft.overrideTarget = this.heldPrey.pos;
-            frontRight.overrideTarget = this.heldPrey.pos;
-        } else if (this.form === 'MANTIS' && this.mantisLegs) {
-            this.triggerMantisAttack(prey.pos);
-            return true;
-        } else if (this.form === 'SCORPION') {
-            // Trigger Charge Attack
-            this.triggerScorpionAttack();
-            // Don't set generic 'lunging', let the customized attack state handle it.
-            // We store onConsumePrey, which triggerScorpionAttack/updateScorpion will use.
-            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
-            return true;
-
-        } else if (this.form === 'STICK_INSECT') {
-            this.predationState = 'attacking';
-            // Align to prey
-            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
-            // Trigger Front Legs Attack
-            if (this.stickLegs) {
-                this.stickLegs.forEach(leg => {
-                    if (leg.offsetIndex === 0) {
-                        leg.isAttacking = true;
-                        leg.attackProgress = 0;
-                    }
-                });
-            }
-        } else if (this.form === 'COCKROACH') {
-            this.predationState = 'attacking';
-            // Align to prey
-            this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
-            this.wasAttacking = false; // Ensure trigger fires in updateCockroach
-        } else {
-            // Generic Lunge
-            this.predationState = 'lunging';
-            this.lungeTimer = 10;
-        }
-
-        return true;
-    }
 
     updatePredation() {
         if (this.predationState === 'idle') return;
