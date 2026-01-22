@@ -519,10 +519,29 @@ function gameLoop() {
                 c.update(c.pos, c.angle, c.vel); // Update legs
             } else {
                 // --- RIVAL AI LOGIC ---
-                // 1. PREDATOR BEHAVIOR (Higher Stage)
                 let distToPlayer = c.pos.dist(player.pos);
                 let visionRange = (c.visionRadius || 400) * (c.scale || 1.0);
                 let isFocused = false;
+
+                // 0. PRIORITY FLEE (From Attack)
+                if (c.isFleeing && c.fleeTimer > 0) {
+                    isFocused = true;
+                    c.fleeTimer--;
+                    if (c.fleeTimer <= 0) c.isFleeing = false;
+
+                    // Flee from player
+                    let angleAway = Math.atan2(c.pos.y - player.pos.y, c.pos.x - player.pos.x);
+                    let angleDiff = angleAway - c.angle;
+                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                    c.angle += Math.max(-0.15, Math.min(0.15, angleDiff)); // Fast turn
+
+                    let speed = 4.0 * (c.scale || 1.0);
+                    c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(speed);
+                }
+
+                // 1. PREDATOR BEHAVIOR (Higher Stage)
+
 
                 if (c.evolutionStage > player.evolutionStage && distToPlayer < visionRange * 0.6) {
                     // Chase!
