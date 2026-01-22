@@ -241,6 +241,7 @@ const env = new Environment();
 let camera = new Vec2(0, 0);
 
 const creeps = [];
+const corpses = []; // Dead bodies
 const texts = []; // 浮动文字
 const particles = []; // 粒子效果
 const ripples = []; // 地面震波
@@ -779,18 +780,21 @@ function gameLoop() {
                 // Callback when eat logic triggers (Apex of lunge or Mouth reach)
                 // Remove creep from world NOW (delayed).
                 let idx = creeps.indexOf(c);
-                if (idx !== -1) creeps.splice(idx, 1);
+                if (idx !== -1) {
+                    creeps.splice(idx, 1);
+                    // Add to Corpses
+                    c.corpseTimer = 300; // 5 seconds
+                    c.maxCorpseTimer = 300;
+                    c.isDead = true;
+                    corpses.push(c);
+                }
 
-                // XP Calculation Fixed: Use Evolution Stage power, not Scale (which shrinks on Reset)
+                // XP Calculation Fixed
                 let stagePower = c.evolutionStage !== undefined ? Math.pow(1.5, c.evolutionStage) : 0;
                 let xpGain = c.isRival ? Math.floor(20 * stagePower) : (1 + Math.floor(c.size * (c.scale || 1)));
                 player.gainXp(xpGain);
-                if (pos) {
-                    // Juicy particles at the bite location
-                    let pSize = (c.size || 5) * (c.scale || 1) * 1.5;
-                    let pCount = 15;
-                    createParticles(pos.x, pos.y, c.color, pSize, pCount);
-                }
+
+                // Removed Particle Explosion ("Residue") as requested, since we now keep the corpse.
 
                 // --- TITAN QUEST TRACKING (Moved Here) ---
                 if (player.titanQuest && player.titanQuest.active && !player.titanQuest.complete) {
@@ -835,7 +839,14 @@ function gameLoop() {
         }
     }
 
-    // Update Texts & Particles
+    // Update Texts & Particles & Corpses
+    for (let i = corpses.length - 1; i >= 0; i--) {
+        let c = corpses[i];
+        c.corpseTimer--;
+        if (c.corpseTimer <= 0) {
+            corpses.splice(i, 1);
+        }
+    }
     for (let i = texts.length - 1; i >= 0; i--) {
         texts[i].update();
         if (texts[i].life <= 0) texts.splice(i, 1);
@@ -942,6 +953,21 @@ function gameLoop() {
     // The "Giant Grid" effect happens naturally because the player is tiny!
     // Pass currentTier to draw function
     env.draw(ctx, camera, width, height, window.gameScale, currentTier);
+
+    // Draw Corpses (Fade out)
+    corpses.forEach(c => {
+        ctx.save();
+        let alpha = Math.max(0, c.corpseTimer / c.maxCorpseTimer);
+        ctx.globalAlpha = alpha;
+        // Draw without Health Bar or Debug
+        // We call drawInternal directly if possible, or just draw and rely on isDead/Player checks to skip logic
+        // But draw() calls drawDebugHitboxes which we might not want.
+        // Actually debugging outlines on corpses might be annoying.
+        // But Insect.js draw() calls drawInternal + drawDebugHitboxes.
+        // We can just rely on alpha to fade it all.
+        c.draw(ctx);
+        ctx.restore();
+    });
 
     // Draw Creeps
     creeps.forEach(c => c.draw(ctx));

@@ -1092,7 +1092,7 @@ export class Insect {
     draw(ctx) {
         this.drawInternal(ctx);
         // Debug Hitboxes
-        this.drawDebugHitboxes(ctx);
+        if (!this.isDead) this.drawDebugHitboxes(ctx);
 
         // Draw Popups (World Space)
         if (this.damagePopups) {
