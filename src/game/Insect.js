@@ -80,11 +80,11 @@ export class Insect {
 
         // 颜色配置
         this.colors = {
-            head: '#cccccc', // Primitive: Grey/Pale
-            thorax: '#cccccc',
-            abdomen: '#b3b3b3',
-            gradStart: '#e0e0e0',
-            gradEnd: '#999999'
+            head: 'rgba(16, 185, 129, 0.9)', // Emerald 500
+            thorax: 'rgba(5, 150, 105, 0.9)', // Emerald 600
+            abdomen: 'rgba(4, 120, 87, 0.9)', // Emerald 700
+            gradStart: 'rgba(52, 211, 153, 0.9)', // Emerald 400 (Highlight)
+            gradEnd: 'rgba(6, 78, 59, 0.9)'   // Emerald 900 (Shadow)
         };
 
         this.thoraxPos = this.pos.clone();
@@ -789,11 +789,18 @@ export class Insect {
         } else if (this.evolutionStage === 3) {
             this.form = 'PILLBUG';
             this.maxSpeed *= 1.1;
+
+            // Fix: Reset Ladybug States
+            this.ladybugState = 'idle';
+            this.wingOpenAngle = 0;
+            this.predationState = 'idle';
+
             this.pillBugSegments = [];
             for (let i = 0; i < 9; i++) {
                 this.pillBugSegments.push({ x: this.pos.x, y: this.pos.y, angle: this.angle });
             }
             formName = "潮虫 (PILLBUG)";
+            this.legs = []; // Pillbug has custom leg drawing
 
         } else if (this.evolutionStage === 4) {
             this.form = 'COCKROACH';
@@ -1102,7 +1109,7 @@ export class Insect {
     draw(ctx) {
         this.drawInternal(ctx);
         // Debug Hitboxes
-        if (!this.isDead) this.drawDebugHitboxes(ctx);
+        // if (!this.isDead) this.drawDebugHitboxes(ctx);
 
         // Draw Popups (World Space)
         if (this.damagePopups) {
@@ -1805,6 +1812,11 @@ export class Insect {
 
         let ax = 0; let ay = 0;
 
+        if (input.moveVector) {
+            ax += input.moveVector.x * accel;
+            ay += input.moveVector.y * accel;
+        }
+
         // --- ATTACK LOGIC ---
         if (isAttacking) {
             this.ladybugAttackTimer--;
@@ -2163,6 +2175,12 @@ export class Insect {
         } else {
             // Movement
             let targetDx = 0, targetDy = 0;
+
+            if (input.moveVector) {
+                targetDx = input.moveVector.x;
+                targetDy = input.moveVector.y;
+            }
+
             if (input.up) targetDy = -1;
             if (input.down) targetDy = 1;
             if (input.left) targetDx = -1;
