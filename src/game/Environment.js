@@ -88,8 +88,8 @@ export class Environment {
             for (let j = -range; j <= range; j++) {
                 let seedX = cx + i * fixedGridSize;
                 let seedY = cy + j * fixedGridSize;
-                // Draw Objects - Always at scale 1.0 logic (gridSize 500)
-                this.pseudoRandomDecor(ctx, seedX, seedY, fixedGridSize, tier);
+                // Draw Objects
+                this.pseudoRandomDecor(ctx, seedX, seedY, fixedGridSize, tier, scale);
             }
         }
 
@@ -323,20 +323,24 @@ export class Environment {
         }
     }
 
-    pseudoRandomDecor(ctx, baseX, baseY, gridSize, tier = 1) {
+    pseudoRandomDecor(ctx, baseX, baseY, gridSize, tier = 1, scale = 1.0) {
         let seed = Math.abs((Math.sin(baseX * 12.9898 + baseY * 78.233) * 43758.5453));
+
+        // LOD Thresholds
+        const pixelThreshold = 4; // Min pixels to draw
 
         // --- TIER 2: Sand Grains & Special Objects ---
         if (tier === 2) {
             // 1. Sand Grains (Visual Noise)
-            ctx.fillStyle = '#dcb68a'; // Darker sand grain
-            // Deterministic loop for grains
-            for (let g = 0; g < 12; g++) {
-                let gs = Math.abs(Math.sin(baseX + g * 55.1) * 1234.5);
-                let gx = baseX + (gs % 1) * gridSize;
-                let gy = baseY + ((gs * 10) % 1) * gridSize;
-                // Tiny 2x2 dot
-                ctx.fillRect(gx, gy, 3, 3);
+            // Cull if scale is small (Zoomed out)
+            if (scale > 0.6) {
+                ctx.fillStyle = '#dcb68a';
+                for (let g = 0; g < 12; g++) {
+                    let gs = Math.abs(Math.sin(baseX + g * 55.1) * 1234.5);
+                    let gx = baseX + (gs % 1) * gridSize;
+                    let gy = baseY + ((gs * 10) % 1) * gridSize;
+                    ctx.fillRect(gx, gy, 3, 3);
+                }
             }
 
             // 2. Stones (Irregular Shapes)
@@ -463,6 +467,9 @@ export class Environment {
                 rot = (giantSeed * 777) % (Math.PI * 2);
             }
             size *= scaleFactor;
+
+            // LOD Check: If projected size is too small, skip
+            if (size * scale < pixelThreshold) continue;
 
             // Leaf Colors (Autumn/Dry themes)
             let colorVariance = localSeed % 1;

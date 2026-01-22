@@ -67,6 +67,7 @@ export class Insect {
         this.isChasing = false;
         this.isFleeing = false;
         this.scale = config.startScale;
+        this.damagePopups = []; // Visual Damage Numbers
 
         // --- Prestige / World Reset Multiplier ---
         this.worldTier = 1.0;
@@ -718,10 +719,19 @@ export class Insect {
             this.targetScale = config.startScale;
         } else {
             // Fallback if config missing
+            // Assuming a default scaleConfig[1] or similar is available globally or passed.
+            // For now, using a placeholder value or previous logic.
+            // Original: this.baseScale *= 1.5; this.targetScale = this.baseScale;
+            // User snippet: this.targetScale = scaleConfig[1];
+            // To avoid undefined, I'll keep the original fallback logic for baseScale.
             this.baseScale *= 1.5;
             this.targetScale = this.baseScale;
         }
+        this.scale = this.baseScale;
 
+        this.damagePopups = []; // Visual Debug for Hits
+
+        this.vel = new Vec2(0, 0);
         // Immediately apply if instant, but respecting modifier will happen in update loop
         // If instant, we might want to force it
         if (isInstant) {
@@ -871,10 +881,18 @@ export class Insect {
 
 
     update(input) {
-        if (this.form === 'TARANTULA') {
-            this.updateTarantula(input);
-            return;
+        if (this.globalAttackCooldown > 0) {
+            this.globalAttackCooldown--;
         }
+
+        // Update Damage Popups
+        if (this.damagePopups) {
+            this.damagePopups.forEach(p => p.update());
+            this.damagePopups = this.damagePopups.filter(p => p.life > 0);
+        }
+
+
+
         // --- Update Predation Logic (Spider / Mantis) ---
         this.updatePredation();
 
@@ -886,6 +904,25 @@ export class Insect {
             (this.form === 'CENTIPEDE' && this.predationState === 'attacking') ||
             (this.form === 'STICK_INSECT' && this.predationState === 'attacking')) {
             input = { up: false, down: false, left: false, right: false, shift: false };
+        }
+
+        // --- Flee Override (Global) ---
+        if (this.isFleeing) {
+            this.fleeTimer--;
+            if (this.fleeTimer <= 0) {
+                this.isFleeing = false;
+            } else if (this.fleeTarget) {
+                let fx = this.pos.x - this.fleeTarget.x;
+                let fy = this.pos.y - this.fleeTarget.y;
+                input = {
+                    up: fy < -10,
+                    down: fy > 10,
+                    left: fx < -10,
+                    right: fx > 10,
+                    shift: true,
+                    attack: false // no attacking while fleeing
+                };
+            }
         }
 
         // --- Walk Cycle ---
@@ -1052,6 +1089,53 @@ export class Insect {
     }
 
     draw(ctx) {
+        this.drawInternal(ctx);
+
+        // Draw Popups (World Space)
+        if (this.damagePopups) {
+            this.damagePopups.forEach(p => p.draw(ctx));
+        }
+
+        // Draw Health Bar (For Same-Stage Victims)
+        if (!this.isPlayer && this.hitsTaken > 0 && this.hitsTaken < 3) {
+            const maxHP = 3;
+            const curHP = 3 - this.hitsTaken;
+            const pct = curHP / maxHP;
+
+            ctx.save();
+            ctx.translate(this.pos.x, this.pos.y);
+            // Bar dimensions
+            const w = 60 * this.scale;
+            const h = 10 * this.scale;
+            const yOff = -60 * this.scale;
+
+            // Background (Black)
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.fillRect(-w / 2, yOff, w, h);
+
+            // Fall Damage (Gray/Red Empty?) No just fill.
+
+            // Fill (Green -> Red?) or just Red. User said "Drops by 1/3".
+            // Let's use Green for HP.
+            ctx.fillStyle = curHP === 2 ? '#ffff00' : '#ff3333'; // Yellow (2/3) then Red (1/3)
+            if (curHP === 3) ctx.fillStyle = '#00ff00';
+
+            ctx.fillRect(-w / 2 + 2, yOff + 2, (w - 4) * pct, h - 4);
+
+            // Segments Dividers
+            ctx.fillStyle = 'black';
+            ctx.fillRect(-w / 2 + (w / 3), yOff, 2, h);
+            ctx.fillRect(-w / 2 + (2 * w / 3), yOff, 2, h);
+
+            // Border
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(-w / 2, yOff, w, h);
+            ctx.restore();
+        }
+    }
+
+    drawInternal(ctx) {
         // --- Growth Flash Effect ---
         if (this.flashTimer > 0) {
             ctx.save();
@@ -1968,7 +2052,7 @@ export class Insect {
                 this.heldPrey = null;
             }
 
-            if (this.pillBugAttackTimer > 100) {
+            if (this.pillBugAttackTimer > 50) {
                 this.predationState = 'idle';
                 this.pillBugCooldown = 20;
             }
@@ -2729,6 +2813,48 @@ export class Insect {
     }
 
     startPredation(prey, consumeCallback) {
+        if (this.globalAttackCooldown > 0) {
+            // console.log('Log: startPredation blocked by Cooldown: ' + this.globalAttackCooldown);
+            return false;
+        }
+
+        let nonLethal = false;
+        if (prey.evolutionStage === this.evolutionStage) {
+            this.globalAttackCooldown = 60; // 1s interval
+
+
+            prey.hitsTaken = (prey.hitsTaken || 0) + 1;
+
+            // Visual Feedback: Handled in Prey's draw method (Health Bar)
+
+            prey.isFleeing = true;
+            prey.fleeTimer = 100;
+            prey.fleeTarget = { x: this.pos.x, y: this.pos.y };
+
+            if (prey.hitsTaken < 3) {
+                nonLethal = true;
+            }
+        }
+
+        const result = this._startPredationInternal(prey, consumeCallback);
+        if (nonLethal) {
+            this.heldPrey = null;
+            this.onConsumePrey = null;
+            return false;
+        }
+        return result;
+    }
+
+    _startPredationInternal(prey, consumeCallback) {
+        // Generic Init (Restored from lost block)
+        this.heldPrey = {
+            pos: prey.pos.clone(),
+            angle: prey.angle,
+            scale: prey.scale,
+            color: prey.color,
+            size: (prey.size || 5) * (prey.scale || 1)
+        };
+        this.onConsumePrey = consumeCallback;
         if (this.form === 'TARANTULA' && this.predationState === 'attacking') {
             if (consumeCallback) consumeCallback(prey.pos);
             return true;
@@ -2786,6 +2912,7 @@ export class Insect {
             if (this.form === 'CENTIPEDE' && this.predationState === 'attacking') {
                 // Allow
             } else {
+                console.log("Log: Returning False (Non-Lethal)");
                 return false;
             }
         }
@@ -2799,6 +2926,7 @@ export class Insect {
             colors: prey.colors,
             size: (prey.size || 5) * (prey.scale || 1)
         };
+        // Wrap callback for debugging
         this.onConsumePrey = consumeCallback;
         this.predationTimer = 0;
 
@@ -2895,7 +3023,6 @@ export class Insect {
 
         // Manual Surge (Shift Key / Space / Attack)
         if ((input.shift || input.space || input.attack) && this.predationState === 'idle') {
-            console.log('Manual Surge Triggered');
             this.predationState = 'attacking';
             this.centipedeAttackTimer = 40;
             this.centipedeMandibleOpen = 0;
@@ -2906,7 +3033,6 @@ export class Insect {
         }
 
         if (this.predationState === 'attacking') {
-            console.log(`Insect.js: updateCentipede - Attacking. Timer: ${this.centipedeAttackTimer}, Speed: ${this.speed}`);
         }
         const s = this.scale;
 
@@ -2946,7 +3072,6 @@ export class Insect {
 
             // Consume Logic (Snap)
             if (this.centipedeAttackTimer === 30) {
-                console.log('Insect.js: updateCentipede - TRIGGERING CONSUME');
                 if (this.onConsumePrey) {
                     let impact = head ? new Vec2(head.x, head.y) : this.pos;
                     this.onConsumePrey(impact);
@@ -2955,8 +3080,8 @@ export class Insect {
                 this.heldPrey = null;
             }
 
-            // End Condition (Low Speed or Timer)
-            if (this.speed < (4.0 * s * 1.5) && this.centipedeAttackTimer < 30) {
+            // End Condition (Timer Only to prevent rapid loops)
+            if (this.centipedeAttackTimer <= 0) {
                 this.predationState = 'idle';
             }
         } else {
@@ -3660,6 +3785,9 @@ export class Insect {
 
 
     updateScorpion(input) {
+        // Fix: Ensure generic state doesn't lock us out (it should check actual scorpion state)
+        if (this.predationState === 'attacking') this.predationState = 'idle';
+
         const s = this.scale;
 
         // --- Attack State Machine ---
@@ -3721,7 +3849,7 @@ export class Insect {
                     if (this.onConsumePrey) {
                         // Eat at impactPos
                         this.onConsumePrey(impactPos);
-                        // If loop to eat multiple? this.onConsumePrey might be single target.
+                        this.onConsumePrey = null; // Prevent multi-trigger
                     }
                 }
             }
@@ -4476,7 +4604,13 @@ export class Insect {
             // Drag prey to mouth
             // Prey position should follow leg tips (average of two tips)
             const tipCenter = frontLeft.currentPos.add(frontRight.currentPos).mult(0.5);
-            this.heldPrey.pos = tipCenter;
+
+            if (this.heldPrey) {
+                this.heldPrey.pos = tipCenter;
+            } else {
+                this.predationState = 'idle';
+                return;
+            }
 
             this.predationTimer++;
             // Check distance to mouth
@@ -4762,7 +4896,8 @@ export class Insect {
         let triggerAttack = false;
 
         // If preying, we force attack state
-        if (this.heldPrey && this.predationState === 'attacking' && !this.wasAttacking) {
+        // If preying, we force attack state
+        if (this.predationState === 'attacking' && !this.wasAttacking) {
             triggerAttack = true; // Auto-trigger burst
         }
         // Manual override (Space) for 'Deterrence' effect
@@ -4819,16 +4954,19 @@ export class Insect {
         this.wingOpenFactor = Math.max(0, Math.min(1, this.wingOpenFactor));
 
         // Movement
-        let shouldMove = true; // Cockroach CAN move while attacking (burst doesn't lock)
+        let shouldMove = true;
 
         if (shouldMove && isPlayer) {
             let ax = 0, ay = 0;
             let accel = 0.8 * s; // Fast
 
-            if (input.up) ay -= accel;
-            if (input.down) ay += accel;
-            if (input.left) ax -= accel;
-            if (input.right) ax += accel;
+            // Disable manual input during attack burst
+            if (!isAttacking) {
+                if (input.up) ay -= accel;
+                if (input.down) ay += accel;
+                if (input.left) ax -= accel;
+                if (input.right) ax += accel;
+            }
 
             if (isAttacking) ay -= 0.5 * s; // Burst forward
 
@@ -5146,6 +5284,41 @@ export class Insect {
             ctx.fillRect((25 + k * 10) * this.scale, 20 * this.scale, 12 * this.scale, 18 * this.scale);
             ctx.fillRect((25 + k * 10) * this.scale, -40 * this.scale, 12 * this.scale, 18 * this.scale);
         }
+        ctx.restore();
+    }
+}
+
+// Helper Class for Damage Numbers
+class DamagePopup {
+    constructor(x, y, text) {
+        this.pos = new Vec2(x, y);
+        this.vel = new Vec2(0, -2.0 * (window.game?.scale || 1.0)); // Float up faster
+        this.text = text;
+        this.life = 1.0;
+        this.alpha = 1.0;
+    }
+    update() {
+        this.pos = this.pos.add(this.vel);
+        this.life -= 0.015; // Slower fade
+        this.alpha = Math.max(0, Math.min(1, this.life));
+    }
+    draw(ctx) {
+        ctx.save();
+        ctx.globalAlpha = this.alpha;
+        ctx.translate(this.pos.x, this.pos.y);
+
+        ctx.fillStyle = '#ff3333';
+        ctx.font = 'bold 48px Arial'; // Much Larger
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'black'; // Black outline for contrast
+        ctx.textAlign = 'center';
+
+        // Add Shadow
+        ctx.shadowColor = 'black';
+        ctx.shadowBlur = 4;
+
+        ctx.strokeText(this.text, 0, 0);
+        ctx.fillText(this.text, 0, 0);
         ctx.restore();
     }
 }
