@@ -70,6 +70,8 @@ export class MobileControls {
         document.body.appendChild(this.sprintBtn);
 
         // 3. Attack Button (Bottom Right - Higher)
+        // REMOVED at user request
+        /*
         this.attackBtn = document.createElement('div');
         this.attackBtn.id = 'attack-btn';
         this.attackBtn.style.cssText = `
@@ -82,6 +84,7 @@ export class MobileControls {
         `;
         this.attackBtn.innerText = "ATK";
         document.body.appendChild(this.attackBtn);
+        */
     }
 
     bindEvents() {
@@ -126,8 +129,8 @@ export class MobileControls {
         this.sprintBtn.addEventListener('touchend', (e) => { e.preventDefault(); this.sprinting = false; this.sprintBtn.style.backgroundColor = 'rgba(0,255,0,0.2)'; });
 
         // Attack Logic
-        this.attackBtn.addEventListener('touchstart', (e) => { e.preventDefault(); this.attacking = true; this.attackBtn.style.backgroundColor = 'rgba(255,0,0,0.5)'; });
-        this.attackBtn.addEventListener('touchend', (e) => { e.preventDefault(); this.attacking = false; this.attackBtn.style.backgroundColor = 'rgba(255,0,0,0.2)'; });
+        // this.attackBtn.addEventListener('touchstart', (e) => { e.preventDefault(); this.attacking = true; this.attackBtn.style.backgroundColor = 'rgba(255,0,0,0.5)'; });
+        // this.attackBtn.addEventListener('touchend', (e) => { e.preventDefault(); this.attacking = false; this.attackBtn.style.backgroundColor = 'rgba(255,0,0,0.2)'; });
     }
 
     updateJoystick(clientX, clientY, center, maxDist) {

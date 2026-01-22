@@ -2132,8 +2132,8 @@ export class Insect {
 
         if (this.pillBugCooldown > 0) this.pillBugCooldown--;
 
-        // Manual Trigger (Shift only, prevents space/UI conflict)
-        if (input.shift && this.predationState === 'idle' && this.pillBugCooldown <= 0) {
+        // Manual Trigger (Space/Attack only)
+        if (input.attack && this.predationState === 'idle' && this.pillBugCooldown <= 0) {
             this.predationState = 'attacking';
             this.pillBugAttackTimer = 0;
         }
