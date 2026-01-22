@@ -2932,6 +2932,8 @@ export class Insect {
             return 40 * this.scale;
         } else if (this.form === 'PILLBUG') {
             return 30 * this.scale;
+        } else if (this.form === 'GIANT_WETA') {
+            return 100 * this.scale;
         }
         return 20 * this.scale;
     }

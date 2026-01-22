@@ -728,7 +728,7 @@ function gameLoop() {
         }
 
         // Collision OR In Range (for Mantis/Spider)
-        if (checkCollision(player, c) || (player.form === 'MANTIS' && distToCreep < eatRange)) {
+        if (checkCollision(player, c) || ((player.form === 'MANTIS' || player.form === 'GIANT_WETA') && distToCreep < eatRange)) {
 
             // Restriction Logic:
             // 1. Stage Comparison First
