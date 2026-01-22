@@ -727,7 +727,8 @@ export class Insect {
             this.baseScale *= 1.5;
             this.targetScale = this.baseScale;
         }
-        this.scale = this.baseScale;
+        // Fix: Apply worldScaleModifier immediately to prevent "Giant Jump" then shrink.
+        this.scale = this.baseScale * (this.worldScaleModifier || 1.0);
 
         this.damagePopups = []; // Visual Debug for Hits
 
