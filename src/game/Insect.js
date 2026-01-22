@@ -2814,7 +2814,16 @@ export class Insect {
 
     startPredation(prey, consumeCallback) {
         if (this.globalAttackCooldown > 0) {
-            // console.log('Log: startPredation blocked by Cooldown: ' + this.globalAttackCooldown);
+            return false;
+        }
+
+        // Guard: If Scorpion is already attacking, DO NOT start another.
+        if (this.form === 'SCORPION' && this.scorpionAttackState !== 'none') {
+            return false;
+        }
+
+        // Victim Cooldown (Prevent rapid counting)
+        if (prey.lastHitTime && (Date.now() - prey.lastHitTime < 500)) {
             return false;
         }
 
@@ -2824,6 +2833,7 @@ export class Insect {
 
 
             prey.hitsTaken = (prey.hitsTaken || 0) + 1;
+            prey.lastHitTime = Date.now();
 
             // Visual Feedback: Handled in Prey's draw method (Health Bar)
 
@@ -2955,11 +2965,14 @@ export class Insect {
             return true;
         } else if (this.form === 'SCORPION') {
             // Trigger Charge Attack
-            this.triggerScorpionAttack();
+            // Only return true if we ACTUALLY started a new attack.
+            // If we are already mid-attack, return false so Main doesn't count it again.
+            const started = this.triggerScorpionAttack();
+
             // Don't set generic 'lunging', let the customized attack state handle it.
             // We store onConsumePrey, which triggerScorpionAttack/updateScorpion will use.
             this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
-            return true;
+            return started;
 
         } else if (this.form === 'GIANT_WETA') {
             this.triggerGiantWetaBite();
@@ -3845,11 +3858,12 @@ export class Insect {
 
                     // --- Perform Consumption of Prey in Range ---
                     // Only if we actually triggered this via predation intent? Or always area damage?
-                    // User said "Charge Attack is Predation Action". So yes, eat things here.
-                    if (this.onConsumePrey) {
+                    // User said "Charge Attack                    // Time-Gate to prevent "100+ Count" glitches
+                    if (this.onConsumePrey && (Date.now() - (this.lastConsumeTime || 0) > 500)) {
                         // Eat at impactPos
                         this.onConsumePrey(impactPos);
                         this.onConsumePrey = null; // Prevent multi-trigger
+                        this.lastConsumeTime = Date.now();
                     }
                 }
             }
@@ -4006,7 +4020,9 @@ export class Insect {
             this.scorpionAttackState = 'windup';
             this.scorpionAttackTimer = 15;
             // Optionally clear prey?
+            return true;
         }
+        return false;
     }
 
     updateGiantWeta(input) {

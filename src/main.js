@@ -731,27 +731,8 @@ function gameLoop() {
 
                     // THIS IS WHERE PREY DEATH HAPPENS for RIVALS lower than player.
 
-                    // --- TITAN QUEST TRACKING ---
-                    if (player.titanQuest && player.titanQuest.active && !player.titanQuest.complete) {
-                        if (c.evolutionStage === 12) player.titanQuest.scorpions++;
-                        else if (c.evolutionStage === 11) player.titanQuest.centipedes++;
-                        else if (c.evolutionStage === 10) player.titanQuest.tarantulas++; // Assuming StartStage matches?
-                        // Wait, c.evolutionStage indices: 
-                        // 10: Tarantula, 11: Centipede, 12: Scorpion. Correct.
+                    // Counting moved to consumeCallback to prevent collision spam
 
-                        // Check Completion
-                        if (player.titanQuest.scorpions >= player.titanQuest.reqScorpions &&
-                            player.titanQuest.centipedes >= player.titanQuest.reqCentipedes &&
-                            player.titanQuest.tarantulas >= player.titanQuest.reqTarantulas) {
-                            player.titanQuest.complete = true;
-                            // TRIGGER EVOLUTION
-                            setTimeout(() => {
-                                // Dramatic Pause or Effect?
-                                createParticles(player.pos.x, player.pos.y, '#ff3d00', 50 * player.scale, 50); // Big explosion
-                                player.evolve(); // This will bump to Stage 13 (Titan)
-                            }, 500);
-                        }
-                    }
                     // (Proceed to eat logic below)
                 } else {
                     // Stages are EQUAL: Compare Level
@@ -784,6 +765,25 @@ function gameLoop() {
                     let pSize = (c.size || 5) * (c.scale || 1) * 1.5;
                     let pCount = 15;
                     createParticles(pos.x, pos.y, c.color, pSize, pCount);
+                }
+
+                // --- TITAN QUEST TRACKING (Moved Here) ---
+                if (player.titanQuest && player.titanQuest.active && !player.titanQuest.complete) {
+                    if (c.evolutionStage === 12) player.titanQuest.scorpions++;
+                    else if (c.evolutionStage === 11) player.titanQuest.centipedes++;
+                    else if (c.evolutionStage === 10) player.titanQuest.tarantulas++;
+
+                    // Check Completion
+                    if (player.titanQuest.scorpions >= player.titanQuest.reqScorpions &&
+                        player.titanQuest.centipedes >= player.titanQuest.reqCentipedes &&
+                        player.titanQuest.tarantulas >= player.titanQuest.reqTarantulas) {
+                        player.titanQuest.complete = true;
+                        // TRIGGER EVOLUTION
+                        setTimeout(() => {
+                            createParticles(player.pos.x, player.pos.y, '#ff3d00', 50 * player.scale, 50); // Big explosion
+                            player.evolve(); // This will bump to Stage 13 (Titan)
+                        }, 500);
+                    }
                 }
             })) {
                 // Animation started successfully.
