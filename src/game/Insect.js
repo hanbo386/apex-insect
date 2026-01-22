@@ -1091,6 +1091,8 @@ export class Insect {
 
     draw(ctx) {
         this.drawInternal(ctx);
+        // Debug Hitboxes
+        this.drawDebugHitboxes(ctx);
 
         // Draw Popups (World Space)
         if (this.damagePopups) {
@@ -1134,6 +1136,97 @@ export class Insect {
             ctx.strokeRect(-w / 2, yOff, w, h);
             ctx.restore();
         }
+    }
+
+    getBodyZones() {
+        let zones = [];
+        let radiusMult = 1.0;
+        if (this.form === 'SPIDER') radiusMult = 0.6;
+        if (this.form === 'CRICKET') radiusMult = 0.8;
+
+        // Base Body
+        let baseRadius = (this.size || 6) * (this.scale || 1) * radiusMult;
+        // Pillbug visual is chunky, increase base hit
+        if (this.form === 'PILLBUG') baseRadius *= 1.5;
+
+        zones.push({ pos: this.pos, radius: baseRadius });
+
+        // Head
+        if (this.headPos) zones.push({ pos: this.headPos, radius: 4 * (this.scale || 1) * radiusMult });
+
+        // Specifics
+        if (this.form === 'MANTIS') {
+            let backDir = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(-1);
+            zones.push({ pos: this.pos.add(backDir.mult(40 * this.scale)), radius: 15 * this.scale });
+            zones.push({ pos: this.pos.add(backDir.mult(70 * this.scale)), radius: 20 * this.scale });
+        } else if (this.form === 'TARANTULA') {
+            zones.push({ pos: this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(4 * this.scale)), radius: 20 * this.scale });
+            zones.push({ pos: this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(-30 * this.scale)), radius: 30 * this.scale });
+        } else if (this.form === 'CENTIPEDE' && this.centipedeSegments) {
+            this.centipedeSegments.forEach(seg => {
+                zones.push({ pos: new Vec2(seg.x, seg.y), radius: 12 * this.scale });
+            });
+        } else if (this.form === 'SCORPION' && this.scorpionSegments) {
+            this.scorpionSegments.forEach(seg => {
+                zones.push({ pos: seg.pos, radius: seg.size });
+            });
+        } else if (this.form === 'GIANT_WETA') {
+            let backDir = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(-1);
+            let s = this.scale || 1.0;
+            zones.push({ pos: this.pos.add(backDir.mult(30 * s)), radius: 25 * s });
+            zones.push({ pos: this.pos.add(backDir.mult(60 * s)), radius: 22 * s });
+            zones.push({ pos: this.pos.add(backDir.mult(90 * s)), radius: 15 * s });
+        } else if (this.form === 'CRICKET') {
+            let backDir = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(-1);
+            let s = this.scale || 1.0;
+            zones.push({ pos: this.pos.add(backDir.mult(25 * s)), radius: 18 * s });
+            zones.push({ pos: this.pos.add(backDir.mult(50 * s)), radius: 15 * s });
+        } else if (this.form === 'STICK_INSECT') {
+            if (this.stickSegments) {
+                this.stickSegments.forEach(seg => {
+                    zones.push({ pos: seg, radius: 8 * this.scale });
+                });
+            }
+        } else if (this.form === 'PILLBUG') {
+            if (this.pillBugSegments) {
+                this.pillBugSegments.forEach(s => {
+                    zones.push({ pos: new Vec2(s.x, s.y), radius: 8 * this.scale });
+                });
+            }
+        } else {
+            if (this.abdomenPos) zones.push({ pos: this.abdomenPos, radius: 5 * (this.scale || 1) * radiusMult });
+        }
+        return zones;
+    }
+
+    drawDebugHitboxes(ctx) {
+        // 1. Draw Attack Range (Yellow)
+        let reach = this.getEatRange();
+        let attackPos = this.headPos ? this.headPos : this.pos;
+        ctx.save();
+        ctx.translate(attackPos.x, attackPos.y);
+        ctx.beginPath();
+        // Dashed line
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = 'yellow';
+        ctx.lineWidth = 2;
+        ctx.arc(0, 0, reach, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // 2. Draw Body Hitboxes (Red) - Using Centralized Logic
+        let preyZones = this.getBodyZones();
+
+        ctx.save();
+        ctx.strokeStyle = 'red';
+        ctx.lineWidth = 1.5;
+        preyZones.forEach(zone => {
+            ctx.beginPath();
+            ctx.arc(zone.pos.x, zone.pos.y, zone.radius, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        ctx.restore();
     }
 
     drawInternal(ctx) {
@@ -2796,21 +2889,23 @@ export class Insect {
         if (this.form === 'SPIDER') {
             return SPIDER_CONFIG.legLength * 0.8 * this.scale;
         } else if (this.form === 'MANTIS') {
-            return 120 * this.scale;
-        } else if (this.form === 'TARANTULA') {
-            return 40 * this.scale;
-        } else if (this.form === 'CENTIPEDE' || this.form === 'SCORPION') {
-            return 60 * this.scale;
-        } else if (this.form === 'TITAN') {
-            return 150 * this.scale;
-        } else if (this.form === 'STICK_INSECT') {
             return 80 * this.scale;
-        } else if (this.form === 'COCKROACH') {
-            return 40 * this.scale;
-        } else if (this.form === 'LADYBUG') {
+        } else if (this.form === 'TARANTULA') {
+            return 30 * this.scale;
+        } else if (this.form === 'CENTIPEDE' || this.form === 'SCORPION') {
             return 50 * this.scale;
+        } else if (this.form === 'TITAN') {
+            return 120 * this.scale;
+        } else if (this.form === 'STICK_INSECT') {
+            return 60 * this.scale;
+        } else if (this.form === 'COCKROACH') {
+            return 30 * this.scale;
+        } else if (this.form === 'LADYBUG') {
+            return 40 * this.scale;
+        } else if (this.form === 'PILLBUG') {
+            return 30 * this.scale;
         }
-        return 25 * this.scale;
+        return 20 * this.scale;
     }
 
     startPredation(prey, consumeCallback) {

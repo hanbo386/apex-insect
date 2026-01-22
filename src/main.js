@@ -690,8 +690,14 @@ function gameLoop() {
         let eatRange = player.getEatRange ? player.getEatRange() : 50 * player.scale;
         // Use generic distance check for trigger to allow Mantis Lunge to start early
         let distToCreep = player.pos.dist(c.pos);
+        // Debug Log for Mantis Trigger
+        if (player.form === 'MANTIS' && distToCreep < eatRange) {
+            console.log(`[Main] MANTIS TRIGGER! Dist: ${distToCreep.toFixed(1)} < EatRange: ${eatRange.toFixed(1)}`);
+        }
+
         // Collision OR In Range (for Mantis/Spider)
         if (checkCollision(player, c) || (player.form === 'MANTIS' && distToCreep < eatRange)) {
+
             // Restriction Logic:
             // 1. Stage Comparison First
             if (c.isRival) {
