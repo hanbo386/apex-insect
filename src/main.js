@@ -6,12 +6,14 @@ import { Creep } from './game/Creep.js';
 import { FloatingText } from './game/FloatingText.js';
 import { Particle } from './game/Particle.js';
 import { checkCollision } from './game/Collision.js';
+import { MobileControls } from './game/MobileControls.js';
 
 
 
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+const mobileControls = new MobileControls(); // Initialize Mobile Controls
 let width, height;
 
 function resize() {
@@ -435,6 +437,16 @@ function gameLoop() {
         attack: keys.Space,
         mouseDown: keys.MouseDown
     };
+
+    // Integrate Mobile Controls
+    if (mobileControls.isActive()) {
+        const joy = mobileControls.getMoveVector();
+        if (joy.x !== 0 || joy.y !== 0) {
+            input.moveVector = joy;
+        }
+        if (mobileControls.isSprinting()) input.shift = true;
+        if (mobileControls.isAttacking()) input.attack = true;
+    }
 
     player.update(input);
 

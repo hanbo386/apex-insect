@@ -966,6 +966,13 @@ export class Insect {
 
         let dx = 0;
         let dy = 0;
+
+        // Joystick Support
+        if (input.moveVector) {
+            dx = input.moveVector.x;
+            dy = input.moveVector.y;
+        }
+
         if (input.up) dy -= 1;
         if (input.down) dy += 1;
         if (input.left) dx -= 1;
@@ -975,8 +982,11 @@ export class Insect {
         let isSprinting = input.shift && this.stamina > 0;
 
         if (dx !== 0 || dy !== 0) {
+            let inputMag = Math.sqrt(dx * dx + dy * dy);
+            if (inputMag > 1.0) inputMag = 1.0;
+
             // Scale speed with size so larger forms don't feel slow when zoomed out
-            targetSpeed = this.maxSpeed * this.scale * (isSprinting ? 1.8 : 1.0);
+            targetSpeed = this.maxSpeed * this.scale * (isSprinting ? 1.8 : 1.0) * inputMag;
 
             // Stamina Logic
             if (isSprinting) {
