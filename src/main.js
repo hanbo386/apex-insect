@@ -4,7 +4,7 @@ import { Environment } from './game/Environment.js';
 import { Vec2 } from './game/Vec2.js';
 import { Creep } from './game/Creep.js';
 import { FloatingText } from './game/FloatingText.js';
-import { Particle } from './game/Particle.js';
+import { Particle, BodyPart } from './game/Particle.js';
 import { checkCollision } from './game/Collision.js';
 import { MobileControls } from './game/MobileControls.js';
 
@@ -149,6 +149,9 @@ document.getElementById('xp-btn').addEventListener('click', () => {
 const player = new Insect(width / 2, height / 2);
 player.onLevelUp = (lvl) => {
     texts.push(new FloatingText(player.pos.x, player.pos.y - 50, `LEVEL UP! (${lvl})`, '#00ff00', 40));
+};
+player.onGainXp = (amount) => {
+    texts.push(new FloatingText(player.pos.x, player.pos.y - 40, `+${amount} XP`, '#ffff00', 12, 1.0));
 };
 player.onEvolve = (formName, stage) => {
     // Check for Stage 5 (Spider) -> World Reset
@@ -327,14 +330,16 @@ function spawnCreeps() {
     if (!isFood) {
         // Attempt to spawn a Rival
         let r = Math.random();
-        if (r < 0.70) {
+        if (r < 0.67) {
             targetStage = player.evolutionStage - 1;
-        } else if (r < 0.80) {
+        } else if (r < 0.77) {
             targetStage = player.evolutionStage - 2;
-        } else if (r < 0.90) {
+        } else if (r < 0.87) {
             targetStage = player.evolutionStage;
+        } else if (r < 0.97) {
+            targetStage = player.evolutionStage + 1;
         } else {
-            targetStage = player.evolutionStage + 1; // Now 10% chance
+            targetStage = player.evolutionStage + 2; // 3% Chance
         }
     }
 
@@ -557,36 +562,58 @@ function gameLoop() {
                 }
 
                 // 1. PREDATOR BEHAVIOR (Higher Stage)
+                // Initialize Timers if undefined
+                if (c.chaseTimer === undefined) c.chaseTimer = 0;
+                if (c.chaseCooldown === undefined) c.chaseCooldown = 0;
 
-
-                if (c.evolutionStage > player.evolutionStage && distToPlayer < visionRange * 0.6) {
-                    // Chase!
+                // Handle Cooldown
+                if (c.chaseCooldown > 0) {
+                    c.chaseCooldown--;
+                    // Must wander if cooling down
+                    isFocused = false;
+                } else if (c.evolutionStage > player.evolutionStage && distToPlayer < visionRange * 0.6) {
+                    // Chase Logic
                     isFocused = true;
-                    let angleToPlayer = Math.atan2(player.pos.y - c.pos.y, player.pos.x - c.pos.x);
-                    let angleDiff = angleToPlayer - c.angle;
-                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-                    c.angle += Math.max(-0.1, Math.min(0.1, angleDiff));
 
-                    let chaseSpeed = 3.5 * (c.scale || 1.0);
-                    c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(chaseSpeed);
+                    // Increment Timer
+                    c.chaseTimer++;
+                    if (c.chaseTimer > 180) { // > 3 Seconds (assuming 60fps)
+                        // Stop Chasing!
+                        isFocused = false;
+                        c.chaseCooldown = 180; // 3 Second Cooldown
+                        c.chaseTimer = 0;
+                    } else {
+                        // Actual Movement
+                        let angleToPlayer = Math.atan2(player.pos.y - c.pos.y, player.pos.x - c.pos.x);
+                        let angleDiff = angleToPlayer - c.angle;
+                        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                        c.angle += Math.max(-0.1, Math.min(0.1, angleDiff));
 
-                    if (distToPlayer < 40 * c.scale) {
-                        // CAUGHT!
-                        if (player.evolutionStage <= 1) {
-                            // Game Over if Ant(1) or Primitive(0)
-                            alert("游戏失败！你被捕食了。");
-                            location.reload();
-                            return;
-                        }
+                        let chaseSpeed = 3.5 * (c.scale || 1.0);
+                        c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(chaseSpeed);
 
-                        if (player.evolutionStage > 0) {
-                            player.devolve();
-                            createParticles(player.pos.x, player.pos.y, '#ff0000', 30 * player.scale, 20);
-                            let pushDir = player.pos.sub(c.pos).normalize();
-                            player.pos = player.pos.add(pushDir.mult(150));
+                        if (distToPlayer < 40 * c.scale) {
+                            // CAUGHT!
+                            if (player.evolutionStage <= 1) {
+                                // Game Over if Ant(1) or Primitive(0)
+                                alert("游戏失败！你被捕食了。");
+                                location.reload();
+                                return;
+                            }
+
+                            if (player.evolutionStage > 0) {
+                                player.devolve();
+                                createParticles(player.pos.x, player.pos.y, '#ff0000', 30 * player.scale, 20);
+                                let pushDir = player.pos.sub(c.pos).normalize();
+                                player.pos = player.pos.add(pushDir.mult(150));
+                            }
                         }
                     }
+                } else {
+                    // Not Chasing (Out of range or cooldown just started in else block logic? No, covered by isFocused reset)
+                    // Reset chase timer if we lost interest naturally
+                    c.chaseTimer = 0;
                 }
                 if (c.isDead) continue; // Skip updates for doomed creeps
                 // 2. PREY BEHAVIOR (Lower Stage)
@@ -797,11 +824,23 @@ function gameLoop() {
                 let idx = creeps.indexOf(c);
                 if (idx !== -1) {
                     creeps.splice(idx, 1);
-                    // Add to Corpses
-                    c.corpseTimer = 300; // 5 seconds
-                    c.maxCorpseTimer = 300;
-                    c.isDead = true;
-                    corpses.push(c);
+
+                    // --- Shattering Effect (Body Parts) ---
+                    if (typeof c.shatter === 'function') {
+                        const parts = c.shatter();
+                        parts.forEach(p => {
+                            particles.push(new BodyPart(p.x, p.y, p.part, p.type, p.scale, p.vel, p.props));
+                        });
+                    } else if (c.headPos && c.colors && c.colors.head) {
+                        // Fallback for objects with headPos but no shatter() ?? (Shouldn't happen if Insect)
+                        // But keep old logic just in case? No, Insect should have shatter.
+                        // Let's assume Insect has shatter.
+                        // If it's a simple Creep, it goes to else.
+                        createParticles(c.pos.x, c.pos.y, c.color || '#00aa00', (c.size || 5), 8);
+                    } else {
+                        // Simple Creep Shatter
+                        createParticles(c.pos.x, c.pos.y, c.color || '#00aa00', (c.size || 5), 8);
+                    }
                 }
 
                 // XP Calculation Fixed

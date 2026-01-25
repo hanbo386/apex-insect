@@ -46,8 +46,8 @@ export class Insect {
         this.maxSpeed = 2.0; // Primitive (Stage 0) is slower
 
         // --- Stamina ---
-        this.stamina = 100;
-        this.maxStamina = 100;
+        this.stamina = 200;
+        this.maxStamina = 200;
         this.canSprint = true;
 
         // --- 成长属性 ---
@@ -533,6 +533,7 @@ export class Insect {
 
     gainXp(amount) {
         this.xp += amount;
+        if (this.onGainXp) this.onGainXp(amount);
 
         // Check for Level Up
         this.checkLevelUp();
@@ -5453,6 +5454,121 @@ export class Insect {
             ctx.fillRect((25 + k * 10) * this.scale, -40 * this.scale, 12 * this.scale, 18 * this.scale);
         }
         ctx.restore();
+    }
+
+    // --- Shatter Logic ---
+    shatter() {
+        const parts = [];
+        const s = this.scale || 1.0;
+        const baseVel = () => new Vec2((Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 1.5);
+        const rotProps = () => ({ rotSpeed: (Math.random() - 0.5) * 0.05, angle: this.angle });
+
+        if (this.form === 'SCORPION') {
+            if (this.scorpionClaws) {
+                this.scorpionClaws.forEach(claw => {
+                    let center = claw.shoulder.add(claw.wrist).mult(0.5);
+                    let newClaw = Object.assign(Object.create(Object.getPrototypeOf(claw)), claw);
+                    newClaw.shoulder = claw.shoulder.sub(center); newClaw.elbow = claw.elbow.sub(center); newClaw.wrist = claw.wrist.sub(center);
+                    parts.push({ x: center.x, y: center.y, type: 'claw', part: { claw: newClaw }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle + claw.angle } });
+                });
+            }
+            if (this.scorpionSegments) {
+                this.scorpionSegments.forEach((seg, i) => {
+                    const hasEyes = (i === 1 && seg.type === 'head');
+                    parts.push({ x: seg.pos.x, y: seg.pos.y, type: 'segment', part: { draw: (ctx) => { this.drawScorpionShape(ctx, seg.type, seg.size, s, hasEyes); } }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: seg.angle } });
+                });
+            }
+        }
+        else if (this.form === 'MANTIS') {
+            parts.push({ x: this.headPos.x, y: this.headPos.y, type: 'segment', part: { draw: (ctx) => this.drawMantisHeadShape(ctx, s, 0) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.mantisHeadAngle + this.angle } });
+            parts.push({ x: this.thoraxPos.x, y: this.thoraxPos.y, type: 'segment', part: { draw: (ctx) => this.drawMantisThoraxShape(ctx, s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            parts.push({ x: this.abdomenPos.x, y: this.abdomenPos.y, type: 'segment', part: { draw: (ctx) => this.drawMantisAbdomenShape(ctx, s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.mantisAbdomenAngle + this.angle } });
+            if (this.mantisLegs) {
+                this.mantisLegs.forEach(leg => {
+                    let root = new Vec2(leg.rootX, leg.rootY); let knee = new Vec2(leg.kneeX, leg.kneeY); let foot = new Vec2(leg.renderFootX, leg.renderFootY); let center = root.add(foot).mult(0.5);
+                    let legClone = Object.assign(Object.create(Object.getPrototypeOf(leg)), leg);
+                    parts.push({ x: center.x, y: center.y, type: 'mantis_leg', part: { leg: legClone, root: root.sub(center), knee: knee.sub(center), foot: foot.sub(center) }, scale: s, vel: baseVel(), props: rotProps() });
+                });
+            }
+        }
+        else if (this.form === 'CENTIPEDE') {
+            if (this.centipedeSegments) {
+                this.centipedeSegments.forEach((seg, i) => {
+                    parts.push({
+                        x: seg.x, y: seg.y, type: 'segment', part: {
+                            draw: (ctx) => {
+                                const size = 18 * s; const isHead = (i === 0);
+                                const grad = ctx.createRadialGradient(size / 3, -size / 3, size / 4, 0, 0, size);
+                                if (isHead) { grad.addColorStop(0, '#ff4d4d'); grad.addColorStop(1, '#1a0505'); } else { grad.addColorStop(0, '#d16a2e'); grad.addColorStop(1, '#1a0d05'); }
+                                ctx.fillStyle = grad; ctx.beginPath(); ctx.ellipse(0, 0, isHead ? size * 1.2 : size, size, 0, 0, Math.PI * 2); ctx.fill();
+                                if (isHead) { ctx.fillStyle = '#111'; ctx.beginPath(); ctx.moveTo(size, -size * 0.3); ctx.lineTo(size + 15 * s, -size * 0.1); ctx.lineTo(size, 0); ctx.fill(); ctx.beginPath(); ctx.moveTo(size, size * 0.3); ctx.lineTo(size + 15 * s, size * 0.1); ctx.lineTo(size, 0); ctx.fill(); }
+                            }
+                        }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: seg.angle }
+                    });
+                });
+            }
+        }
+        else if (this.form === 'SPIDER' || this.form === 'TARANTULA') {
+            parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => { ctx.beginPath(); ctx.arc(0, 0, 8 * s, 0, Math.PI * 2); ctx.fillStyle = '#5d4037'; ctx.fill(); } }, scale: s, vel: baseVel(), props: rotProps() });
+            parts.push({ x: this.abdomenPos.x, y: this.abdomenPos.y, type: 'segment', part: { draw: (ctx) => { ctx.beginPath(); ctx.ellipse(0, 0, 12 * s, 8 * s, 0, 0, Math.PI * 2); ctx.fillStyle = '#8d6e63'; ctx.fill(); } }, scale: s, vel: baseVel(), props: rotProps() });
+            let legs = this.tarantulaLegs || this.spiderLegs;
+            if (legs) { legs.forEach(leg => { parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => { ctx.strokeStyle = '#111'; ctx.lineWidth = 3 * s; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 40 * s); ctx.stroke(); } }, scale: s, vel: baseVel(), props: rotProps() }); }); }
+        }
+        else {
+            if (this.headPos) parts.push({ x: this.headPos.x, y: this.headPos.y, type: 'segment', part: { draw: (ctx) => { this.drawSegment(ctx, new Vec2(0, 0), 3.5 * s, 5 * s, 0, this.colors.head); ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(1.5, -2, 1, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(1.5, 2, 1, 0, Math.PI * 2); ctx.fill(); this.drawMandibles(ctx, new Vec2(0, 0), 0); } }, scale: s, vel: baseVel(), props: rotProps() });
+            if (this.thoraxPos) parts.push({ x: this.thoraxPos.x, y: this.thoraxPos.y, type: 'segment', part: { draw: (ctx) => { this.drawSegment(ctx, new Vec2(0, 0), 4 * s, 6 * s, 0, this.colors.thorax); } }, scale: s, vel: baseVel(), props: rotProps() });
+            if (this.abdomenPos) parts.push({ x: this.abdomenPos.x, y: this.abdomenPos.y, type: 'segment', part: { draw: (ctx) => { this.drawSegment(ctx, new Vec2(0, 0), 6 * s, 9 * s, 0, this.colors.abdomen); } }, scale: s, vel: baseVel(), props: rotProps() });
+            if (this.legs) { this.legs.forEach(leg => { let hipPos = leg.offset.rotate(this.angle).add(this.thoraxPos); let footPos = leg.currentPos; let center = hipPos.add(footPos).mult(0.5); let relHip = hipPos.sub(center); let relFoot = footPos.sub(center); parts.push({ x: center.x, y: center.y, type: 'leg', part: { leg: leg, relHip: relHip, relFoot: relFoot }, scale: s, vel: baseVel(), props: rotProps() }); }); }
+        }
+        return parts;
+    }
+
+    drawScorpionShape(ctx, type, size, s, hasEyes) {
+        ctx.strokeStyle = '#2d241b';
+        ctx.lineWidth = Math.max(0.5, 1 * s);
+        if (type === 'head') {
+            ctx.fillStyle = '#4a3b2a';
+            const w = size; const h = size * 0.8;
+            ctx.beginPath(); ctx.moveTo(-w, h); ctx.bezierCurveTo(-w, -h, w, -h, w, h); ctx.lineTo(-w, h); ctx.fill(); ctx.stroke();
+            if (hasEyes) {
+                ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(0, -5 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(-w + 2 * s, -2 * s, 1 * s, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(w - 2 * s, -2 * s, 1 * s, 0, Math.PI * 2); ctx.fill();
+            }
+        } else if (type === 'body') {
+            ctx.fillStyle = '#5c4935';
+            const w = size; const h = size * 0.35;
+            ctx.beginPath(); ctx.rect(-w, -h, w * 2, h * 2); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, -h); ctx.lineTo(0, h); ctx.stroke();
+        } else if (type === 'tail') {
+            ctx.fillStyle = '#755c42';
+            const w = size; const h = size * 1.5;
+            ctx.beginPath(); ctx.moveTo(-w, -h / 2); ctx.lineTo(w, -h / 2); ctx.lineTo(w * 0.8, h / 2); ctx.lineTo(-w * 0.8, h / 2); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.moveTo(-w * 0.5, 0); ctx.lineTo(w * 0.5, 0); ctx.stroke();
+        }
+    }
+
+    drawMantisHeadShape(ctx, s, animTimer = 0) {
+        ctx.fillStyle = '#8BC34A';
+        ctx.beginPath(); ctx.moveTo(0, -8 * s); ctx.lineTo(12 * s, 0); ctx.lineTo(0, 8 * s); ctx.lineTo(-4 * s, 0); ctx.fill();
+        ctx.fillStyle = '#E1F5C4'; ctx.beginPath(); ctx.ellipse(2 * s, -8 * s, 4 * s, 6 * s, -0.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#DDDDDD'; ctx.beginPath(); ctx.arc(3 * s, -8 * s, 1.5 * s, 0, Math.PI * 2); ctx.fillStyle = 'black'; ctx.fill();
+        ctx.fillStyle = '#E1F5C4'; ctx.beginPath(); ctx.ellipse(2 * s, 8 * s, 4 * s, 6 * s, 0.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(3 * s, 8 * s, 1.5 * s, 0, Math.PI * 2); ctx.fillStyle = 'black'; ctx.fill();
+        ctx.strokeStyle = '#4a3b22'; ctx.lineWidth = 0.5 * s;
+        ctx.beginPath(); ctx.moveTo(12 * s, -2 * s); ctx.quadraticCurveTo((25 + Math.sin(animTimer * 2) * 5) * s, -15 * s, 35 * s, -20 * s); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(12 * s, 2 * s); ctx.quadraticCurveTo((25 + Math.cos(animTimer * 2) * 5) * s, 15 * s, 35 * s, 20 * s); ctx.stroke();
+    }
+
+    drawMantisThoraxShape(ctx, s) {
+        ctx.fillStyle = '#7CAF54'; ctx.beginPath(); ctx.moveTo(-25 * s, -6 * s); ctx.lineTo(25 * s, -4 * s); ctx.lineTo(25 * s, 4 * s); ctx.lineTo(-25 * s, 6 * s); ctx.fill();
+        ctx.strokeStyle = '#5D8A40'; ctx.lineWidth = 1 * s; ctx.beginPath(); ctx.moveTo(-25 * s, 0); ctx.lineTo(25 * s, 0); ctx.stroke();
+    }
+
+    drawMantisAbdomenShape(ctx, s) {
+        ctx.fillStyle = '#6DA04B'; ctx.beginPath(); ctx.ellipse(-30 * s, 0, 45 * s, 18 * s, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#558238'; ctx.lineWidth = 2 * s;
+        for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo((-15 - i * 12) * s, (-15 + i * 2) * s); ctx.quadraticCurveTo((-15 - i * 12 - 5) * s, 0, (-15 - i * 12) * s, (15 - i * 2) * s); ctx.stroke(); }
+        ctx.fillStyle = 'rgba(128, 168, 108, 0.6)'; ctx.beginPath(); ctx.moveTo(-10 * s, -8 * s); ctx.lineTo(-70 * s, -2 * s); ctx.lineTo(-10 * s, 8 * s); ctx.fill();
     }
 }
 

@@ -35,11 +35,11 @@ export class FloatingText {
 
         ctx.font = `bold ${Math.floor(fontSize)}px Arial`;
         ctx.fillStyle = this.color;
-        ctx.strokeStyle = 'black'; // Better contrast than white on bright sand
-        ctx.lineWidth = Math.max(2, 2 / scale); // Scale stroke too
+        // ctx.strokeStyle = 'black';
+        // ctx.lineWidth = Math.max(2, 2 / scale);
         ctx.textAlign = 'center';
 
-        ctx.strokeText(this.text, this.pos.x, this.pos.y);
+        // ctx.strokeText(this.text, this.pos.x, this.pos.y);
         ctx.fillText(this.text, this.pos.x, this.pos.y);
 
         ctx.restore();
