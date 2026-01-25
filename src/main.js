@@ -331,10 +331,10 @@ function spawnCreeps() {
             targetStage = player.evolutionStage - 1;
         } else if (r < 0.80) {
             targetStage = player.evolutionStage - 2;
-        } else if (r < 0.95) {
+        } else if (r < 0.90) {
             targetStage = player.evolutionStage;
         } else {
-            targetStage = player.evolutionStage + 1;
+            targetStage = player.evolutionStage + 1; // Now 10% chance
         }
     }
 
@@ -488,11 +488,14 @@ function gameLoop() {
     // 8 / sqrt(0.1) = 8 / 0.31 = 25 (Better).
     // Let's also hard cap it to avoid performance issues.
     let limitBase = MAX_CREEPS;
+    if (player.evolutionStage === 0) limitBase = MAX_CREEPS * 2; // Double for primitive
     if (player.form === 'MANTIS') limitBase = 6; // Hard cap for Mantis to avoid clutter
     let dynamicLimit = Math.min(15, Math.floor(limitBase / Math.sqrt(currentScale)));
 
     if (creeps.length < dynamicLimit) {
-        if (Math.random() < 0.1) spawnCreeps(); // Increased spawn rate slightly
+        // Double spawn rate for primitive to fill the increased limit faster
+        let spawnChance = player.evolutionStage === 0 ? 0.2 : 0.1;
+        if (Math.random() < spawnChance) spawnCreeps();
     }
 
     for (let i = creeps.length - 1; i >= 0; i--) {

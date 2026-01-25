@@ -742,7 +742,11 @@ export class Insect {
         // Increase difficulty for next stage
         // Base XP requirement for Level 1 of new stage should be higher
         // Base XP requirement for Level 1 of new stage should be higher but not crazy
-        this.xpToNext = 10 * Math.pow(1.6, this.evolutionStage);
+        // Adjusted difficulty curve (Balanced)
+        // Original: 10 * 1.6^N (Too Easy)
+        // Previous: 40 * 2.0^N (Too Hard)
+        // Current: 20 * 1.8^N
+        this.xpToNext = 20 * Math.pow(1.8, this.evolutionStage);
         this.xpToNext = Math.floor(this.xpToNext);
 
         let formName = "";
@@ -3068,9 +3072,25 @@ export class Insect {
 
         if (this.form === 'TARANTULA') {
             this.predationState = 'attacking';
-            this.tarantulaAttackTimer = TARANTULA_SETTINGS.attackDuration;
+            // IMPORTANT: Reset timer. TARANTULA_SETTINGS should be imported or available.
+            // If main attack logic relies on this timer being > 0.
+            this.tarantulaAttackTimer = 0; // Reset to 0 (counting UP to duration?) or Duration counting DOWN?
+            // updateTarantula uses: let attackFrames = TARANTULA_SETTINGS.attackDuration - this.tarantulaAttackTimer;
+            // And checks if (tarantulaAttackTimer > 0).
+            // So Timer must be > 0.
+            // Let's set it to Duration (60) and count down?
+            // updateTarantula: isAttacking = this.tarantulaAttackTimer > 0
+            // logic: attackFrames = Duration - Timer.
+            // If Timer starts at Duration: attackFrames = 0.
+            // if Timer decrements, attackFrames goes UP. 
+            // Correct.
+
+            // Wait, previous attempt failed because I might have misread where TARANTULA_SETTINGS was or context.
+            // Let's ensure TARANTULA_SETTINGS is available or hardcode 60.
+            // It is imported at top of file.
+            this.tarantulaAttackTimer = 60; // TARANTULA_SETTINGS.attackDuration
+
             this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
-            // Don't consume yet, wait for lunge apex in updateTarantula
             return true;
         }
         // Note: Removed forced 'attacking' state here.
@@ -3780,6 +3800,11 @@ export class Insect {
             accel *= 2.5; // Boost acceleration.
         }
 
+        if (input.moveVector) {
+            ax += input.moveVector.x * accel;
+            ay += input.moveVector.y * accel;
+        }
+
         if (isAttacking) {
             // LOCK INPUT completely during attack logic (Windup & Lunge & Cooldown)
             // But we must allow velocity to persist if it was set by Lunge Power.
@@ -3812,6 +3837,7 @@ export class Insect {
         }
 
         if (isAttacking) {
+            this.tarantulaAttackTimer--;
             // 大幅前移触发点：105 像素，确保在头部前方炸开
             const burstDist = 105 * s;
             const burstX = this.pos.x + Math.cos(this.angle) * burstDist;

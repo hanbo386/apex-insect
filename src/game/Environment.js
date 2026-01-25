@@ -10,36 +10,49 @@ export class Environment {
     }
 
     initGround() {
-        this.groundCanvas.width = 1024;
-        this.groundCanvas.height = 1024;
-        this.groundCtx.fillStyle = '#e6dcc3';
-        this.groundCtx.fillRect(0, 0, 1024, 1024);
+        // Updated to use richer sandy texture style
+        this.groundCanvas.width = 512;
+        this.groundCanvas.height = 512;
 
-        // Store obstacles for collision
-        this.obstacles = []; // Array of {x, y, radius} normalized to [0,1024] space
+        // Base Sand Color
+        this.groundCtx.fillStyle = '#D2B48C';
+        this.groundCtx.fillRect(0, 0, 512, 512);
 
-        for (let i = 0; i < 8000; i++) {
-            this.groundCtx.fillStyle = Math.random() > 0.5 ? '#d1c4a8' : '#c7b695';
-            let x = Math.random() * 1024;
-            let y = Math.random() * 1024;
-            let s = Math.random() * 2.5;
-            this.groundCtx.fillRect(x, y, s, s);
+        // Noise (Sand grains)
+        for (let i = 0; i < 3000; i++) {
+            const x = Math.random() * 512;
+            const y = Math.random() * 512;
+            const size = Math.random() * 2;
+            this.groundCtx.fillStyle = Math.random() > 0.5 ? '#C2A278' : '#E2C49C';
+            this.groundCtx.fillRect(x, y, size, size);
         }
+
+        // Small Stones/Pebbles
+        for (let i = 0; i < 50; i++) {
+            const x = Math.random() * 512;
+            const y = Math.random() * 512;
+            const r = Math.random() * 3 + 1;
+            this.groundCtx.beginPath();
+            this.groundCtx.arc(x, y, r, 0, Math.PI * 2);
+            this.groundCtx.fillStyle = '#A89F91';
+            this.groundCtx.fill();
+        }
+
+        this.bgPattern = null;
     }
 
     draw(ctx, camera, width, height, scale = 1.0, tier = 1) {
         ctx.save();
-        // Remove renormalizationFactor from method sig as it was unused in logic/replaced by fixed grid
-        // but verify generic call site. main.js calls it with 6 args... 
-        // We have: draw(ctx, camera, width, height, scale, tier) -- 6 args exactly. Perfect.
 
-        // 1. Adaptive Background Color
-        if (typeof tier !== 'undefined' && tier === 2) {
-            ctx.fillStyle = '#eaddbb'; // Sandy color for Tier 2
-        } else {
-            ctx.fillStyle = '#e6dcc3'; // Standard dirt
+        // 1. Background Pattern
+        if (!this.bgPattern) {
+            this.bgPattern = ctx.createPattern(this.groundCanvas, 'repeat');
         }
+
+        ctx.fillStyle = this.bgPattern;
+
         // Cover a huge area to ensure no flickering edges
+        // The pattern tiles based on World Origin (0,0) due to ctx transform
         ctx.fillRect(camera.x - width / scale, camera.y - height / scale, width * 3 / scale, height * 3 / scale);
 
         // --- SAND GRAINS (TIER 2 VISUAL ONLY) ---
