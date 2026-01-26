@@ -495,6 +495,8 @@ function gameLoop() {
     for (let i = creeps.length - 1; i >= 0; i--) {
         let c = creeps[i];
 
+        if (c.hitCooldown && c.hitCooldown > 0) c.hitCooldown--;
+
         if (c.isRival) {
             // Rival AI Logic
             if (player.form === 'TITAN') {
@@ -808,6 +810,29 @@ function gameLoop() {
 
             const consumeCreep = (c) => {
                 if (c.isDead) return;
+
+                // --- Special Logic: Tarantula vs Tarantula Duel ---
+                if (player.form === 'TARANTULA' && c.form === 'TARANTULA') {
+                    if (c.hitsTaken === undefined) c.hitsTaken = 0;
+                    if (c.hitCooldown === undefined) c.hitCooldown = 0;
+
+                    if (c.hitCooldown > 0) return; // Invulnerable
+
+                    c.hitsTaken++;
+                    c.hitCooldown = 45; // Cooldown to prevent instant multi-hits
+
+                    // Visual Feedback (Damage)
+                    createParticles(c.pos.x, c.pos.y, '#8d6e63', 15 * c.scale, 10);
+
+                    // Knockback
+                    let bounce = c.pos.sub(player.pos).normalize().mult(50 * player.scale);
+                    c.pos = c.pos.add(bounce);
+
+                    if (c.hitsTaken < 3) {
+                        return; // Not dead yet
+                    }
+                }
+
                 c.isDead = true;
 
                 let idx = creeps.indexOf(c);
@@ -865,9 +890,14 @@ function gameLoop() {
             else if (player.predationState === 'attacking') {
                 // Check if form supports "Ramming/Active" kill
                 if (['TARANTULA', 'MANTIS', 'SCORPION', 'GIANT_WETA', 'RHINO_BEETLE'].includes(player.form)) {
-                    // For these, contact during attack = death
-                    consumeCreep(c);
-                    consumed = true;
+                    // Fix: Don't ram the intended target! Let the animation kill it.
+                    if (c === player.targetCreep) {
+                        // Do nothing to target (it is locked)
+                    } else {
+                        // For others, contact during attack = death
+                        consumeCreep(c);
+                        consumed = true;
+                    }
                 }
             }
 

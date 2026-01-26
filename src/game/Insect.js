@@ -2996,10 +2996,8 @@ export class Insect {
             size: (prey.size || 5) * (prey.scale || 1)
         };
         this.onConsumePrey = consumeCallback;
-        if (this.form === 'TARANTULA' && this.predationState === 'attacking') {
-            if (consumeCallback) consumeCallback(prey.pos);
-            return true;
-        }
+        // Removed premature TARANTULA kill block to fix animation timing
+
 
         // --- LADYBUG: Single-Shot Attack (Like Tarantula) ---
         if (this.form === 'LADYBUG') {
@@ -3058,6 +3056,8 @@ export class Insect {
             }
         }
 
+        this.targetCreep = prey; // Restored Fix: Exclude intended target from collision ramming
+
         this.heldPrey = {
             pos: prey.pos.clone(),
             angle: prey.angle,
@@ -3073,23 +3073,11 @@ export class Insect {
 
         if (this.form === 'TARANTULA') {
             this.predationState = 'attacking';
-            // IMPORTANT: Reset timer. TARANTULA_SETTINGS should be imported or available.
-            // If main attack logic relies on this timer being > 0.
-            this.tarantulaAttackTimer = 0; // Reset to 0 (counting UP to duration?) or Duration counting DOWN?
-            // updateTarantula uses: let attackFrames = TARANTULA_SETTINGS.attackDuration - this.tarantulaAttackTimer;
-            // And checks if (tarantulaAttackTimer > 0).
-            // So Timer must be > 0.
-            // Let's set it to Duration (60) and count down?
-            // updateTarantula: isAttacking = this.tarantulaAttackTimer > 0
-            // logic: attackFrames = Duration - Timer.
-            // If Timer starts at Duration: attackFrames = 0.
-            // if Timer decrements, attackFrames goes UP. 
-            // Correct.
 
-            // Wait, previous attempt failed because I might have misread where TARANTULA_SETTINGS was or context.
-            // Let's ensure TARANTULA_SETTINGS is available or hardcode 60.
-            // It is imported at top of file.
-            this.tarantulaAttackTimer = 60; // TARANTULA_SETTINGS.attackDuration
+            // Use Settings, default to 60 if missing
+            const duration = (typeof TARANTULA_SETTINGS !== 'undefined') ? TARANTULA_SETTINGS.attackDuration : 60;
+            this.tarantulaAttackTimer = duration;
+            this.tarantulaAttackImpactTriggered = false;
 
             this.angle = Math.atan2(prey.pos.y - this.pos.y, prey.pos.x - this.pos.x);
             return true;
@@ -3850,7 +3838,9 @@ export class Insect {
             const burstX = this.pos.x + Math.cos(this.angle) * burstDist;
             const burstY = this.pos.y + Math.sin(this.angle) * burstDist;
 
-            if (attackFrames === TARANTULA_SETTINGS.attackWindup) {
+            if (!this.tarantulaAttackImpactTriggered && attackFrames >= TARANTULA_SETTINGS.attackWindup) {
+                this.tarantulaAttackImpactTriggered = true;
+
                 // 瞬间弹射阶段：产生冲击波
                 this.tarantulaEffects.push(new AttackEffect(burstX, burstY, 'shockwave', 0, s));
 
