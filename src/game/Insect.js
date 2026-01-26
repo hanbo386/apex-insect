@@ -5456,7 +5456,8 @@ export class Insect {
     shatter() {
         const parts = [];
         const s = this.scale || 1.0;
-        const baseVel = () => new Vec2((Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 1.5);
+        // Increase explosion velocity for better scattering
+        const baseVel = () => new Vec2((Math.random() - 0.5) * 8.0, (Math.random() - 0.5) * 8.0);
         // Reduced rotation to effectively zero as requested
         const rotProps = () => ({ rotSpeed: 0, angle: this.angle });
 
@@ -5511,30 +5512,63 @@ export class Insect {
             let legs = this.tarantulaLegs || this.spiderLegs;
             if (legs) {
                 legs.forEach(leg => {
-                    // Improved Leg Debris: Spawn at approximate leg midpoint
-                    let foot = leg.currentPos || this.pos;
-                    let center = foot.add(this.pos).mult(0.5);
+                    // Calculate exact positions for shattered segments
+                    let shoulder = leg.worldShoulder ? leg.worldShoulder.clone() : this.pos.clone();
+                    let foot = leg.currentPos ? leg.currentPos.clone() : this.pos.clone();
+                    // Midpoint "Knee/Elbow"
+                    let elbow = shoulder.add(foot).mult(0.5);
+
+                    // 1. Femur (Upper Leg) - Thicker, hairy
+                    let femurPos = shoulder.add(elbow).mult(0.5);
                     parts.push({
-                        x: center.x, y: center.y,
+                        x: femurPos.x, y: femurPos.y,
                         type: 'segment',
                         part: {
                             draw: (ctx) => {
                                 ctx.strokeStyle = '#3e2723';
-                                ctx.lineWidth = 3 * s;
+                                ctx.lineWidth = 5 * s;
+                                ctx.lineCap = 'round';
+                                ctx.beginPath(); ctx.moveTo(-10 * s, 0); ctx.lineTo(10 * s, 0); ctx.stroke();
+                                // Dense Fuzz
+                                ctx.strokeStyle = '#2a1a10';
+                                ctx.lineWidth = 0.6 * s;
                                 ctx.beginPath();
-                                ctx.moveTo(-15 * s, 0);
-                                ctx.lineTo(15 * s, 0);
-                                ctx.stroke();
-                                // Hairs
-                                ctx.lineWidth = 0.5 * s;
-                                ctx.beginPath();
-                                for (let k = -10; k <= 10; k += 4) { ctx.moveTo(k * s, 0); ctx.lineTo(k * s, 5 * s); }
+                                for (let k = -10; k <= 10; k += 3) {
+                                    ctx.moveTo(k * s, -2 * s); ctx.lineTo(k * s + (Math.random() - 0.5) * 4 * s, -7 * s);
+                                    ctx.moveTo(k * s, 2 * s); ctx.lineTo(k * s + (Math.random() - 0.5) * 4 * s, 7 * s);
+                                }
                                 ctx.stroke();
                             }
                         },
                         scale: s,
                         vel: baseVel(),
-                        props: { ...rotProps(), angle: Math.random() * Math.PI } // Static random orientation
+                        props: { ...rotProps(), angle: Math.random() * Math.PI * 2 }
+                    });
+
+                    // 2. Tibia (Lower Leg) - Thinner, spiky
+                    let tibiaPos = elbow.add(foot).mult(0.5);
+                    parts.push({
+                        x: tibiaPos.x, y: tibiaPos.y,
+                        type: 'segment',
+                        part: {
+                            draw: (ctx) => {
+                                ctx.strokeStyle = '#2d1b15';
+                                ctx.lineWidth = 3.5 * s;
+                                ctx.lineCap = 'round';
+                                ctx.beginPath(); ctx.moveTo(-12 * s, 0); ctx.lineTo(12 * s, 0); ctx.stroke();
+                                // Spikes
+                                ctx.strokeStyle = '#150a05';
+                                ctx.lineWidth = 1.0 * s;
+                                ctx.beginPath();
+                                ctx.moveTo(6 * s, 0); ctx.lineTo(9 * s, 6 * s);
+                                ctx.moveTo(-4 * s, 0); ctx.lineTo(-1 * s, 6 * s);
+                                ctx.moveTo(8 * s, 0); ctx.lineTo(11 * s, -5 * s);
+                                ctx.stroke();
+                            }
+                        },
+                        scale: s,
+                        vel: baseVel(),
+                        props: { ...rotProps(), angle: Math.random() * Math.PI * 2 }
                     });
                 });
             }
