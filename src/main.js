@@ -344,20 +344,9 @@ function spawnCreeps() {
     }
 
     // --- Unique Titan & Boss Logic ---
-    // If player is TITAN, they are the Sovereign. NO higher or equal stage NPCs can spawn.
-    // Titan is Stage 13.
-    // If Player is Titan, Max spawn stage is 12 (Scorpion).
-    if (player.form === 'TITAN') {
-        if (targetStage >= 13) {
-            targetStage = 12; // Downgrade to Scorpion
-        }
-    }
-
-    // Also keep the previous rule: If target is TITAN (13), and player is SCORPION (12), downgrade.
-    if (targetStage === 13) {
-        if (player.evolutionStage >= 12) {
-            targetStage = 12;
-        }
+    // TITAN (Stage 13) is Player Only. NPCs spawn max at Stage 12 (Scorpion).
+    if (targetStage >= 13) {
+        targetStage = 12;
     }
 
     // If target stage is valid (>= 0), spawn NPC Insect
@@ -815,12 +804,12 @@ function gameLoop() {
             }
 
             // Eat!
-            // Eat!
             // Unified Predation Logic (Spider & Generic)
-            // Attempt to start predation animation
-            if (player.startPredation(c, (pos) => {
-                // Callback when eat logic triggers (Apex of lunge or Mouth reach)
-                // Remove creep from world NOW (delayed).
+
+            const consumeCreep = (c) => {
+                if (c.isDead) return;
+                c.isDead = true;
+
                 let idx = creeps.indexOf(c);
                 if (idx !== -1) {
                     creeps.splice(idx, 1);
@@ -832,25 +821,18 @@ function gameLoop() {
                             particles.push(new BodyPart(p.x, p.y, p.part, p.type, p.scale, p.vel, p.props));
                         });
                     } else if (c.headPos && c.colors && c.colors.head) {
-                        // Fallback for objects with headPos but no shatter() ?? (Shouldn't happen if Insect)
-                        // But keep old logic just in case? No, Insect should have shatter.
-                        // Let's assume Insect has shatter.
-                        // If it's a simple Creep, it goes to else.
-                        createParticles(c.pos.x, c.pos.y, c.color || '#00aa00', (c.size || 5), 8);
+                        createParticles(c.pos.x, c.pos.y, c.colors.head || '#00aa00', (c.size || 5), 8);
                     } else {
-                        // Simple Creep Shatter
                         createParticles(c.pos.x, c.pos.y, c.color || '#00aa00', (c.size || 5), 8);
                     }
                 }
 
-                // XP Calculation Fixed
+                // XP Calculation
                 let stagePower = c.evolutionStage !== undefined ? Math.pow(1.5, c.evolutionStage) : 0;
                 let xpGain = c.isRival ? Math.floor(20 * stagePower) : (1 + Math.floor(c.size * (c.scale || 1)));
                 player.gainXp(xpGain);
 
-                // Removed Particle Explosion ("Residue") as requested, since we now keep the corpse.
-
-                // --- TITAN QUEST TRACKING (Moved Here) ---
+                // --- TITAN QUEST TRACKING ---
                 if (player.titanQuest && player.titanQuest.active && !player.titanQuest.complete) {
                     if (c.evolutionStage === 12) player.titanQuest.scorpions++;
                     else if (c.evolutionStage === 11) player.titanQuest.centipedes++;
@@ -864,34 +846,36 @@ function gameLoop() {
                         // TRIGGER EVOLUTION
                         setTimeout(() => {
                             createParticles(player.pos.x, player.pos.y, '#ff3d00', 50 * player.scale, 50); // Big explosion
-                            player.evolve(); // This will bump to Stage 13 (Titan)
+                            player.evolve();
                         }, 500);
                     }
                 }
-            })) {
-                // Animation started successfully.
-                // Remove creep from world immediately.
-                // For spider, it's visually held. For lunge, it's abstractly "doomed" or we could hide it?
-                // For lunge, simple splice is fine, it disappears and then particles appear at apex.
-                // creeps.splice(i, 1); 
-                // EDIT: Do NOT remove immediately. Let consumeCallback handle removal or rely on visual cues.
-                // Actually, if we don't remove it, it stays in the list and might collide again?
-                // But startPredation returns FALSE if busy.
-                // The issue is: If we don't splice here, it renders.
-                // If we splice here, it disappears.
-                // For Tarantula, we WANT it to stay rendered until the LUNGE hits.
-                // So we must splice INSIDE the callback. 
-                // But splice requires index 'i'. 'i' changes if other things die.
-                // Robust solution: Mark creep as 'dead/eaten' and filter later? Or splicing object directly?
-                // creeps is an array. creeps.indexOf(c) is safer.
+            };
 
-                // We will move the splice to the callback.
-                // BUT we must effectively disable the creep so it doesn't move or collide again.
-                c.isDead = true; // Flag it.
+            // Attempt to start predation animation
+            let consumed = false;
+
+            // 1. Try standard animation trigger
+            if (player.startPredation(c, (pos) => {
+                consumeCreep(c); // Callback
+            })) {
+                consumed = true;
             }
-            continue;
-        }
-    }
+            // 2. If blocked (e.g. already attacking), but is a Lethal Attacker (Tarantula/Mantis/Weta doing AoE)
+            else if (player.predationState === 'attacking') {
+                // Check if form supports "Ramming/Active" kill
+                if (['TARANTULA', 'MANTIS', 'SCORPION', 'GIANT_WETA', 'RHINO_BEETLE'].includes(player.form)) {
+                    // For these, contact during attack = death
+                    consumeCreep(c);
+                    consumed = true;
+                }
+            }
+
+            if (consumed) {
+                continue;
+            }
+        } // End if (collision)
+    } // End for (creeps)
 
     // Update Texts & Particles & Corpses
     for (let i = corpses.length - 1; i >= 0; i--) {

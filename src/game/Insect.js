@@ -3140,7 +3140,13 @@ export class Insect {
                 });
             }
         } else if (this.form === 'CENTIPEDE') {
-            console.log('Insect.js: startPredation - CENTIPEDE Block Entered');
+            // Fix: If already attacking, eat immediately (Ramming Mode)
+            if (this.predationState === 'attacking') {
+                if (consumeCallback) consumeCallback(this.pos);
+                this.onConsumePrey = null;
+                return true;
+            }
+
             this.predationState = 'attacking';
             this.centipedeAttackTimer = 40;
             this.centipedeMandibleOpen = 0;
@@ -3181,8 +3187,8 @@ export class Insect {
             this._debugInput = true;
         }
 
-        // Manual Surge (Shift Key / Space / Attack)
-        if ((input.shift || input.space || input.attack) && this.predationState === 'idle') {
+        // Manual Surge (Space / Attack) - Shift removed to allow Sprinting
+        if ((input.space || input.attack) && this.predationState === 'idle') {
             this.predationState = 'attacking';
             this.centipedeAttackTimer = 40;
             this.centipedeMandibleOpen = 0;
@@ -5461,7 +5467,8 @@ export class Insect {
         const parts = [];
         const s = this.scale || 1.0;
         const baseVel = () => new Vec2((Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 1.5);
-        const rotProps = () => ({ rotSpeed: (Math.random() - 0.5) * 0.05, angle: this.angle });
+        // Reduced rotation to effectively zero as requested
+        const rotProps = () => ({ rotSpeed: 0, angle: this.angle });
 
         if (this.form === 'SCORPION') {
             if (this.scorpionClaws) {
@@ -5509,12 +5516,97 @@ export class Insect {
             }
         }
         else if (this.form === 'SPIDER' || this.form === 'TARANTULA') {
-            parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => { ctx.beginPath(); ctx.arc(0, 0, 8 * s, 0, Math.PI * 2); ctx.fillStyle = '#5d4037'; ctx.fill(); } }, scale: s, vel: baseVel(), props: rotProps() });
-            parts.push({ x: this.abdomenPos.x, y: this.abdomenPos.y, type: 'segment', part: { draw: (ctx) => { ctx.beginPath(); ctx.ellipse(0, 0, 12 * s, 8 * s, 0, 0, Math.PI * 2); ctx.fillStyle = '#8d6e63'; ctx.fill(); } }, scale: s, vel: baseVel(), props: rotProps() });
+            parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => { ctx.beginPath(); ctx.arc(0, 0, 10 * s, 0, Math.PI * 2); ctx.fillStyle = '#111'; ctx.fill(); } }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            parts.push({ x: this.abdomenPos.x, y: this.abdomenPos.y, type: 'segment', part: { draw: (ctx) => { ctx.beginPath(); ctx.ellipse(0, 0, 15 * s, 12 * s, 0, 0, Math.PI * 2); ctx.fillStyle = '#4a3b2a'; ctx.fill(); } }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
             let legs = this.tarantulaLegs || this.spiderLegs;
-            if (legs) { legs.forEach(leg => { parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => { ctx.strokeStyle = '#111'; ctx.lineWidth = 3 * s; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 40 * s); ctx.stroke(); } }, scale: s, vel: baseVel(), props: rotProps() }); }); }
+            if (legs) {
+                legs.forEach(leg => {
+                    // Improved Leg Debris: Spawn at approximate leg midpoint
+                    let foot = leg.currentPos || this.pos;
+                    let center = foot.add(this.pos).mult(0.5);
+                    parts.push({
+                        x: center.x, y: center.y,
+                        type: 'segment',
+                        part: {
+                            draw: (ctx) => {
+                                ctx.strokeStyle = '#3e2723';
+                                ctx.lineWidth = 3 * s;
+                                ctx.beginPath();
+                                ctx.moveTo(-15 * s, 0);
+                                ctx.lineTo(15 * s, 0);
+                                ctx.stroke();
+                                // Hairs
+                                ctx.lineWidth = 0.5 * s;
+                                ctx.beginPath();
+                                for (let k = -10; k <= 10; k += 4) { ctx.moveTo(k * s, 0); ctx.lineTo(k * s, 5 * s); }
+                                ctx.stroke();
+                            }
+                        },
+                        scale: s,
+                        vel: baseVel(),
+                        props: { ...rotProps(), angle: Math.random() * Math.PI } // Static random orientation
+                    });
+                });
+            }
+        }
+        else if (this.form === 'CRICKET') {
+            parts.push({ x: this.headPos.x, y: this.headPos.y, type: 'segment', part: { draw: (ctx) => this.drawCricketPart(ctx, 'head', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => this.drawCricketPart(ctx, 'thorax', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            let abPos = this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(-20 * s));
+            parts.push({ x: abPos.x, y: abPos.y, type: 'segment', part: { draw: (ctx) => this.drawCricketPart(ctx, 'abdomen', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            if (this.cricketLegs) { this.cricketLegs.forEach(leg => { parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => { if (leg.draw) leg.draw(ctx); } }, scale: s, vel: baseVel(), props: rotProps() }); }); }
+        }
+        else if (this.form === 'COCKROACH') {
+            let hPos = this.pos.add(new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(30 * s));
+            parts.push({ x: hPos.x, y: hPos.y, type: 'segment', part: { draw: (ctx) => this.drawCockroachPart(ctx, 'head', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => this.drawCockroachPart(ctx, 'abdomen', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => this.drawCockroachPart(ctx, 'wing_left', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle - 0.2 } });
+            parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => this.drawCockroachPart(ctx, 'wing_right', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle + 0.2 } });
+            if (this.cockroachLegs) {
+                this.cockroachLegs.forEach(leg => {
+                    // Clone and localize foot position to avoid infinite stretching
+                    let newLeg = Object.assign(Object.create(Object.getPrototypeOf(leg)), leg);
+                    let relPos = leg.footPos.sub(this.pos);
+                    // Rotate relative position into local space (since context will be rotated by angle)
+                    newLeg.footPos = relPos.rotate(-this.angle);
+
+                    parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => { if (newLeg.draw) newLeg.draw(ctx, new Vec2(0, 0), 0); } }, scale: s, vel: baseVel(), props: rotProps() });
+                });
+            }
+        }
+        else if (this.form === 'RHINO_BEETLE') {
+            parts.push({ x: this.pos.x + 20 * s, y: this.pos.y, type: 'segment', part: { draw: (ctx) => this.drawRhinoPart(ctx, 'head', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => this.drawRhinoPart(ctx, 'thorax', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            parts.push({ x: this.pos.x - 20 * s, y: this.pos.y, type: 'segment', part: { draw: (ctx) => this.drawRhinoPart(ctx, 'abdomen', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            if (this.rhinoLegs) { this.rhinoLegs.forEach(leg => { const mockParent = { pos: new Vec2(0, 0), angle: 0, scale: s }; parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => { if (leg.draw) leg.draw(ctx, mockParent); } }, scale: s, vel: baseVel(), props: rotProps() }); }); }
+        }
+        else if (this.form === 'GIANT_WETA') {
+            // Head
+            parts.push({ x: this.pos.x + 30 * s, y: this.pos.y, type: 'segment', part: { draw: (ctx) => this.drawWetaPart(ctx, 'head', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            // Body (Thorax+Abdomen combinedish for Weta, or separate?)
+            parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => this.drawWetaPart(ctx, 'body', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            // Legs
+            if (this.wetaLegs) {
+                this.wetaLegs.forEach(leg => {
+                    parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => { if (leg.draw) leg.draw(ctx, new Vec2(0, 0), 0); } }, scale: s, vel: baseVel(), props: rotProps() });
+                });
+            }
+        }
+        else if (this.form === 'STICK_INSECT') {
+            if (this.stickSegments) { this.stickSegments.forEach((seg, i) => { parts.push({ x: seg.x, y: seg.y, type: 'segment', part: { draw: (ctx) => this.drawStickPart(ctx, 30 * s, s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } }); }); }
+            if (this.stickLegs) { this.stickLegs.forEach(leg => { const mockBody = { pos: new Vec2(0, 0), scale: s }; parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => { if (leg.draw) leg.draw(ctx, mockBody); } }, scale: s, vel: baseVel(), props: rotProps() }); }); }
+        }
+        else if (this.form === 'PILLBUG') {
+            if (this.pillBugSegments) { this.pillBugSegments.forEach((seg, i) => { const isHead = i === 0; const isTail = i === this.pillBugSegments.length - 1; parts.push({ x: seg.x, y: seg.y, type: 'segment', part: { draw: (ctx) => this.drawPillbugPart(ctx, 10 * s, s, isHead, isTail) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: seg.angle } }); }); }
+        }
+        else if (this.form === 'LADYBUG') {
+            parts.push({ x: this.pos.x + Math.cos(this.angle) * 15 * s, y: this.pos.y + Math.sin(this.angle) * 15 * s, type: 'segment', part: { draw: (ctx) => this.drawLadybugPart(ctx, 'head', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => this.drawLadybugPart(ctx, 'elytra_left', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => this.drawLadybugPart(ctx, 'elytra_right', s) }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
+            if (this.legs) { this.legs.forEach(leg => { parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => { ctx.strokeStyle = '#222'; ctx.lineWidth = 2.5 * s; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(10 * s, 5 * s); ctx.stroke(); } }, scale: s, vel: baseVel(), props: rotProps() }); }); }
         }
         else {
+            // GENERIC
             if (this.headPos) parts.push({ x: this.headPos.x, y: this.headPos.y, type: 'segment', part: { draw: (ctx) => { this.drawSegment(ctx, new Vec2(0, 0), 3.5 * s, 5 * s, 0, this.colors.head); ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(1.5, -2, 1, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(1.5, 2, 1, 0, Math.PI * 2); ctx.fill(); this.drawMandibles(ctx, new Vec2(0, 0), 0); } }, scale: s, vel: baseVel(), props: rotProps() });
             if (this.thoraxPos) parts.push({ x: this.thoraxPos.x, y: this.thoraxPos.y, type: 'segment', part: { draw: (ctx) => { this.drawSegment(ctx, new Vec2(0, 0), 4 * s, 6 * s, 0, this.colors.thorax); } }, scale: s, vel: baseVel(), props: rotProps() });
             if (this.abdomenPos) parts.push({ x: this.abdomenPos.x, y: this.abdomenPos.y, type: 'segment', part: { draw: (ctx) => { this.drawSegment(ctx, new Vec2(0, 0), 6 * s, 9 * s, 0, this.colors.abdomen); } }, scale: s, vel: baseVel(), props: rotProps() });
@@ -5522,6 +5614,8 @@ export class Insect {
         }
         return parts;
     }
+
+    // --- Helper Drawing Methods for Shatter ---
 
     drawScorpionShape(ctx, type, size, s, hasEyes) {
         ctx.strokeStyle = '#2d241b';
@@ -5569,6 +5663,108 @@ export class Insect {
         ctx.strokeStyle = '#558238'; ctx.lineWidth = 2 * s;
         for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo((-15 - i * 12) * s, (-15 + i * 2) * s); ctx.quadraticCurveTo((-15 - i * 12 - 5) * s, 0, (-15 - i * 12) * s, (15 - i * 2) * s); ctx.stroke(); }
         ctx.fillStyle = 'rgba(128, 168, 108, 0.6)'; ctx.beginPath(); ctx.moveTo(-10 * s, -8 * s); ctx.lineTo(-70 * s, -2 * s); ctx.lineTo(-10 * s, 8 * s); ctx.fill();
+    }
+
+    drawCricketPart(ctx, type, s) {
+        if (type === 'head') {
+            ctx.fillStyle = "#271c19"; ctx.beginPath(); ctx.arc(45 * 0.2 * s, 0, 14 * s, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#111"; ctx.beginPath(); ctx.ellipse(50 * 0.2 * s, -8 * s, 4 * s, 6 * s, 0.5, 0, Math.PI * 2); ctx.ellipse(50 * 0.2 * s, 8 * s, 4 * s, 6 * s, -0.5, 0, Math.PI * 2); ctx.fill();
+            // Antennae
+            ctx.strokeStyle = "#3e2723"; ctx.lineWidth = 1.5 * s; ctx.beginPath(); ctx.moveTo(10 * s, -5 * s); ctx.lineTo(80 * s, -20 * s); ctx.stroke(); ctx.beginPath(); ctx.moveTo(10 * s, 5 * s); ctx.lineTo(80 * s, 20 * s); ctx.stroke();
+        } else if (type === 'thorax') {
+            ctx.fillStyle = "#3e2723";
+            ctx.beginPath(); ctx.rect(-15 * s, -18 * s, 30 * s, 36 * s); ctx.fill();
+            ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.beginPath(); ctx.ellipse(0, -5 * s, 10 * s, 6 * s, -0.2, 0, Math.PI * 2); ctx.fill();
+        } else if (type === 'abdomen') {
+            ctx.fillStyle = "#4e342e"; ctx.beginPath(); ctx.ellipse(0, 0, 45 * s, 22 * s, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = "rgba(0,0,0,0.3)"; ctx.lineWidth = 2 * s;
+            for (let i = 1; i < 5; i++) { ctx.beginPath(); ctx.arc(-i * 8 * s, 0, (20 - i * 2) * s, -Math.PI / 3, Math.PI / 3); ctx.stroke(); }
+            // Cerci
+            ctx.strokeStyle = "#4e342e"; ctx.beginPath(); ctx.moveTo(-35 * s, -5 * s); ctx.lineTo(-55 * s, -15 * s); ctx.moveTo(-35 * s, 5 * s); ctx.lineTo(-55 * s, 15 * s); ctx.stroke();
+        }
+    }
+
+    drawCockroachPart(ctx, type, s) {
+        if (type === 'head') {
+            ctx.fillStyle = '#050201'; ctx.beginPath(); ctx.arc(0, 0, 10 * s, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#3E2723'; ctx.lineWidth = 1 * s; ctx.beginPath(); ctx.moveTo(5 * s, -2 * s); ctx.lineTo(40 * s, -15 * s); ctx.stroke(); ctx.beginPath(); ctx.moveTo(5 * s, 2 * s); ctx.lineTo(40 * s, 15 * s); ctx.stroke();
+        } else if (type === 'abdomen') {
+            let grad = ctx.createRadialGradient(-10 * s, 0, 0, 0, 0, 55 * s); grad.addColorStop(0, "#3E2723"); grad.addColorStop(1, "#050201");
+            ctx.fillStyle = grad; ctx.beginPath(); ctx.ellipse(0, 0, 30 * s, 20 * s, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.lineWidth = 1 * s;
+            for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(-i * 8 * s, 0, 18 * s, -1, 1); ctx.stroke(); }
+        } else if (type === 'wing_left' || type === 'wing_right') {
+            ctx.fillStyle = "rgba(160, 82, 45, 0.85)"; ctx.beginPath(); ctx.ellipse(0, 0, 50 * s, 15 * s, 0, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+
+    drawRhinoPart(ctx, type, s) {
+        if (type === 'head') {
+            ctx.fillStyle = '#1a0505'; ctx.beginPath(); ctx.arc(0, 0, 11 * s, 0, Math.PI * 2); ctx.fill();
+            // Horn
+            ctx.fillStyle = '#2b1212'; ctx.beginPath(); ctx.moveTo(4 * s, -6 * s); ctx.quadraticCurveTo(30 * s, 0, 50 * s, -12 * s); ctx.lineTo(38 * s, 0); ctx.lineTo(50 * s, 12 * s); ctx.quadraticCurveTo(30 * s, 0, 4 * s, 6 * s); ctx.fill();
+        } else if (type === 'thorax') {
+            ctx.fillStyle = '#2b1212'; ctx.beginPath(); ctx.ellipse(0, 0, 20 * s, 18 * s, 0, 0, Math.PI * 2); ctx.fill();
+        } else if (type === 'abdomen') {
+            ctx.fillStyle = '#3E1C1C'; ctx.beginPath(); ctx.ellipse(0, 0, 34 * s, 21 * s, 0, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+
+    drawWetaPart(ctx, type, s) {
+        if (type === 'head') {
+            ctx.fillStyle = '#1a0d00'; ctx.beginPath(); ctx.ellipse(0, 0, 15 * s, 12 * s, 0, 0, Math.PI * 2); ctx.fill();
+            // Mandibles
+            ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(10 * s, -5 * s); ctx.lineTo(25 * s, -2 * s); ctx.lineTo(10 * s, 0); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(10 * s, 5 * s); ctx.lineTo(25 * s, 2 * s); ctx.lineTo(10 * s, 0); ctx.fill();
+            // Antennae base
+            ctx.strokeStyle = '#3e2723'; ctx.lineWidth = 2 * s; ctx.beginPath(); ctx.moveTo(5 * s, -8 * s); ctx.lineTo(15 * s, -25 * s); ctx.stroke(); ctx.beginPath(); ctx.moveTo(5 * s, 8 * s); ctx.lineTo(15 * s, 25 * s); ctx.stroke();
+        } else if (type === 'body') {
+            // Thorax/Abdomen
+            ctx.fillStyle = '#3e2723'; ctx.beginPath(); ctx.ellipse(0, 0, 35 * s, 18 * s, 0, 0, Math.PI * 2); ctx.fill();
+            // Armor plates
+            ctx.strokeStyle = '#1a0d00'; ctx.lineWidth = 2 * s;
+            for (let i = -2; i <= 2; i++) {
+                ctx.beginPath(); ctx.moveTo(i * 8 * s, -15 * s); ctx.quadraticCurveTo((i * 8 + 5) * s, 0, i * 8 * s, 15 * s); ctx.stroke();
+            }
+        }
+    }
+
+    drawStickPart(ctx, len, s) {
+        let width = 4 * s;
+        ctx.fillStyle = "#8D6E63"; ctx.beginPath(); ctx.rect(-len / 2, -width / 2, len, width); ctx.fill();
+        ctx.fillStyle = "#3E2723"; ctx.beginPath(); ctx.arc(-len / 2, 0, width / 2 + 1, 0, Math.PI * 2); ctx.fill();
+    }
+
+    drawPillbugPart(ctx, radius, s, isHead, isTail) {
+        if (isHead) {
+            ctx.fillStyle = '#2D3748'; ctx.beginPath(); ctx.ellipse(4 * s, 0, radius * 0.9, radius, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(10 * s, -radius * 0.6, 2.5 * s, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(10 * s, radius * 0.6, 2.5 * s, 0, Math.PI * 2); ctx.fill();
+        } else if (isTail) {
+            ctx.fillStyle = '#4A5568'; ctx.beginPath(); ctx.ellipse(-2 * s, 0, radius, radius * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+        } else {
+            ctx.fillStyle = '#4A5568'; ctx.beginPath(); ctx.ellipse(0, 0, radius * 0.65, radius, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#718096'; ctx.beginPath(); ctx.ellipse(-2 * s, 0, radius * 0.25, radius * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+
+    drawLadybugPart(ctx, type, s) {
+        if (type === 'head') {
+            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(0, 0, 8 * s, 0, Math.PI * 2); ctx.fill();
+            // Spots
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'; ctx.beginPath(); ctx.arc(3 * s, -3 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
+            // Antennae
+            ctx.strokeStyle = '#111'; ctx.lineWidth = 1.5 * s; ctx.beginPath(); ctx.moveTo(5 * s, -5 * s); ctx.quadraticCurveTo(15 * s, -15 * s, 20 * s, -10 * s); ctx.stroke(); ctx.beginPath(); ctx.moveTo(5 * s, 5 * s); ctx.quadraticCurveTo(15 * s, 15 * s, 20 * s, 10 * s); ctx.stroke();
+        } else if (type === 'elytra_left') {
+            let bodyGrad = ctx.createRadialGradient(-2 * s, 0, 2 * s, 0, 0, 15 * s); bodyGrad.addColorStop(0, '#ff4d4d'); bodyGrad.addColorStop(1, '#800000');
+            ctx.fillStyle = bodyGrad; ctx.beginPath(); ctx.ellipse(0, 0, 10 * s, 15 * s, 0, Math.PI / 2, -Math.PI / 2); ctx.fill(); // Half circle ish
+            // Spots
+            ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(0, -5 * s, 3 * s, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(3 * s, 5 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
+        } else if (type === 'elytra_right') {
+            let bodyGrad = ctx.createRadialGradient(-2 * s, 0, 2 * s, 0, 0, 15 * s); bodyGrad.addColorStop(0, '#ff4d4d'); bodyGrad.addColorStop(1, '#800000');
+            ctx.fillStyle = bodyGrad; ctx.beginPath(); ctx.ellipse(0, 0, 10 * s, 15 * s, 0, -Math.PI / 2, Math.PI / 2); ctx.fill();
+            // Spots
+            ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(0, -5 * s, 3 * s, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(-3 * s, 5 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
+        }
     }
 }
 
