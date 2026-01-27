@@ -169,12 +169,12 @@ function showReviveModal() {
 
 // --- EVOLUTION EGG CLASS ---
 class EvolutionEgg {
-    constructor(x, y) {
+    constructor(x, y, scale = 1.0) {
         this.pos = new Vec2(x, y);
         this.isEgg = true;
         this.timer = Math.random() * 100;
-        this.scale = 1.0;
-        this.size = 10;
+        this.scale = scale;
+        this.size = 10 * scale;
         this.dead = false;
     }
     update() {
@@ -370,7 +370,8 @@ function cleanupCreeps() {
         // Treat undefined stage (basic Creep/Food) as -1
         let stage = c.evolutionStage !== undefined ? c.evolutionStage : -1;
 
-        if (stage < player.evolutionStage - 2) {
+        // PROTECT EGGS
+        if (!c.isEgg && stage < player.evolutionStage - 2) {
             // console.log("Evolve Cleanup: Removing stage", stage);
             createParticles(c.pos.x, c.pos.y, c.color || '#999', (c.size || 5), 5); // Poof effect
             creeps.splice(i, 1);
@@ -446,30 +447,32 @@ player.game = {
 };
 let cameraShake = 0;
 
-function spawnCreeps() {
-    // Dynamic Spawn Range based on Zoom
+function spawnEvoEgg() {
     let scale = window.gameScale || 1.0;
-    // Calculate visible world radius (approximate)
     let visibleRadius = Math.max(width, height) / scale / 2;
-
-    // Spawn just outside visible area
     let angle = Math.random() * Math.PI * 2;
     let dist = visibleRadius + 100 + Math.random() * 400;
     let spawnPos = player.pos.add(new Vec2(Math.cos(angle), Math.sin(angle)).mult(dist));
 
-    // Weighted Spawning Logic: 35% Chance for Evolution Egg
-    if (Math.random() < 0.35) {
-        let egg = new EvolutionEgg(spawnPos.x, spawnPos.y);
-        // Apply scale
-        if (player.worldScaleDivisor && player.worldScaleDivisor > 1.0) {
-            egg.scale /= player.worldScaleDivisor;
-        }
-        creeps.push(egg);
-        return;
-    }
+    // Scale Egg with Player
+    // Logic: 1.0x Player Scale.
+    let eggScale = player.scale ? player.scale * 1.0 : 1.0;
+    let egg = new EvolutionEgg(spawnPos.x, spawnPos.y, eggScale);
+
+    // No World Divisor logic needed if we follow player scale directly.
+    creeps.push(egg);
+    console.log(`[Spawn] Egg at scale ${eggScale.toFixed(2)}`);
+}
+
+function spawnNPC() {
+    // Dynamic Spawn Range based on Zoom
+    let scale = window.gameScale || 1.0;
+    let visibleRadius = Math.max(width, height) / scale / 2;
+    let angle = Math.random() * Math.PI * 2;
+    let dist = visibleRadius + 100 + Math.random() * 400;
+    let spawnPos = player.pos.add(new Vec2(Math.cos(angle), Math.sin(angle)).mult(dist));
 
     // Weighted Spawning Logic
-    // FIX: Maintain constant ratio of Rivals vs Food regardless of player level
     // 70% Food, 30% Chance for Rival Logic
     let isFood = Math.random() < 0.70;
     let targetStage = -1;
@@ -491,10 +494,7 @@ function spawnCreeps() {
     }
 
     // --- Unique Titan & Boss Logic ---
-    // TITAN (Stage 13) is Player Only. NPCs spawn max at Stage 12 (Scorpion).
-    if (targetStage >= 13) {
-        targetStage = 12;
-    }
+    if (targetStage >= 13) targetStage = 12;
 
     // If target stage is valid (>= 0), spawn NPC Insect
     if (targetStage >= 0) {
@@ -510,12 +510,9 @@ function spawnCreeps() {
 
         // DOUBLE CHECK: Ensure we didn't spawn a weakling due to bug
         if (rival.evolutionStage < player.evolutionStage - 2) {
-            console.warn(`Spawn Logic attempted to spawn Stage ${rival.evolutionStage} (Target: ${targetStage}) when Player is ${player.evolutionStage}. Aborting.`);
             return;
         }
 
-        // --- Scale Scaling for World Reset ---
-        // New NPCs must match the player's "Shrunk" world scale
         // --- Scale Scaling for World Reset ---
         // New NPCs must match the player's "Shrunk" world scale
         if (player.worldScaleDivisor && player.worldScaleDivisor > 1.0) {
@@ -523,23 +520,7 @@ function spawnCreeps() {
             rival.scale *= shrinkFactor;
             rival.baseScale *= shrinkFactor;
             rival.targetScale *= shrinkFactor;
-
-            // Also need to boost their stats to match the "Tier"?
-            // If they are physically small, but "Stage X", they should have normal stats?
-            // Actually, if player has 20x stats (via worldTier), and enemies have 1x stats, player OPs them.
-            // If they are physically small, but "Stage X", they should have normal stats?
-            // Actually, if player has 20x stats (via worldTier), and enemies have 1x stats, player OPs them.
-            // If "World Reset" implies "Ascension", enemies should definitely be harder.
-            // So we should multiply their stats by worldScaleDivisor too? 
-            // Or use worldTier (which counts Resets).
-            // Let's stick to worldTier for Stats, but worldScaleDivisor for Size.
-            // rival.worldTier = player.worldTier;
-            // For now, let's just make their size correct. The complexity of stats can be tuned later.
-            // Yes.
             rival.worldTier = player.worldTier;
-            // We need to ensure logic in Insect uses worldTier for damage/hp
-
-            // CRITICAL: Re-init legs so they pick up the new shrunk scale!
             rival.initLegs();
         }
 
@@ -547,11 +528,6 @@ function spawnCreeps() {
         creeps.push(rival);
     } else {
         // Target stage < 0 (Low level food / Creep)
-        // Only spawn food if player is still low level (Stage 0 or 1)
-        // If player is Stage 2 (Ladybug), -1 (Food) is < 2 - 2 (0)? No. 0 is threshold.
-        // Wait, rule is "Lower than Player - 2".
-        // If Player 2. Threshold 0. Food (-1) < 0. YES. Food should stop at Stage 2.
-
         if (player.evolutionStage < 2) {
             let food = new Creep(spawnPos.x, spawnPos.y);
             // Optional: Scale food size slightly for bigger ants
@@ -563,6 +539,12 @@ function spawnCreeps() {
             }
 
             creeps.push(food);
+        } else {
+            // FALLBACK FOR HIGH LEVEL MAPS:
+            // If we rolled 'Food' but can't spawn food, rolling a small chance for an Egg is nice,
+            // but we have dedicated egg logic now.
+            // Let's spawn a weak NPC instead? Or just return.
+            // Return to keep populations clean.
         }
     }
 }
@@ -656,9 +638,18 @@ function gameLoop() {
         let dynamicLimit = Math.min(15, Math.floor(limitBase / Math.sqrt(currentScale)));
 
         if (creeps.length < dynamicLimit) {
-            // Double spawn rate for primitive to fill the increased limit faster
-            let spawnChance = player.evolutionStage === 0 ? 0.2 : 0.1;
-            if (Math.random() < spawnChance) spawnCreeps();
+            // 1. Independent Egg Spawning
+            // IF no eggs, high chance to spawn. IF eggs exist, low chance.
+            let eggCount = creeps.filter(c => c.isEgg).length;
+            if (eggCount === 0) {
+                if (Math.random() < 0.2) spawnEvoEgg();
+            } else if (eggCount < 2) {
+                if (Math.random() < 0.05) spawnEvoEgg();
+            }
+
+            // 2. Independent NPC Spawning
+            // Standard chance for enemies/food
+            if (Math.random() < 0.1) spawnNPC();
         }
 
         for (let i = creeps.length - 1; i >= 0; i--) {
@@ -667,11 +658,11 @@ function gameLoop() {
             // --- EGG LOGIC ---
             if (c.isEgg) {
                 let dist = player.pos.dist(c.pos);
-                let eatRange = (40 * player.scale) + (10 * c.scale);
+                // Increased range to ensure it triggers before generic collision (which is ~50*scale)
+                let eatRange = (60 * player.scale) + (10 * c.scale);
                 if (dist < eatRange) {
                     evoPoints++;
                     saveEvoPoints();
-                    createParticles(c.pos.x, c.pos.y, '#00ffcc', 8 * c.scale, 10);
                     texts.push(new FloatingText(player.pos.x, player.pos.y - 50 * player.scale, "+1 复活点数", "#00ffcc", 30));
                     creeps.splice(i, 1);
                     continue;
@@ -916,7 +907,8 @@ function gameLoop() {
             // Keep world clean of low level trash
             // Treat undefined (Food) as -1
             let stage = c.evolutionStage !== undefined ? c.evolutionStage : -1;
-            if (stage < player.evolutionStage - 2) {
+            // PROTECT EGGS from Stage Cleanup
+            if (!c.isEgg && stage < player.evolutionStage - 2) {
                 creeps.splice(i, 1);
                 continue;
             }
@@ -932,7 +924,8 @@ function gameLoop() {
             }
 
             // Collision OR In Range (for Mantis/Spider)
-            if (checkCollision(player, c) || ((player.form === 'MANTIS' || player.form === 'GIANT_WETA') && distToCreep < eatRange)) {
+            // Fix: Exclude Eggs explicitly so they don't trigger generic combat logic
+            if (!c.isEgg && (checkCollision(player, c) || ((player.form === 'MANTIS' || player.form === 'GIANT_WETA') && distToCreep < eatRange))) {
 
                 // Restriction Logic:
                 // 1. Stage Comparison First
