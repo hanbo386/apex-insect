@@ -55,6 +55,7 @@ export class Insect {
         this.xp = 0;
         this.xpToNext = 5; // 升级所需初始 XP
         this.evolutionStage = 0; // 0: Primitive, 1: Ant, 2: Ladybug...
+        this.maxStageReached = 0;
 
         // Size Init
         const config = STAGE_CONFIG[0];
@@ -707,6 +708,13 @@ export class Insect {
         }
     }
 
+    restoreMaxStage() {
+        if (this.maxStageReached > this.evolutionStage) {
+            console.log(`Restoring to Max Stage: ${this.maxStageReached}`);
+            this.setLevel(this.maxStageReached, 1);
+        }
+    }
+
     evolve(isInstant = false) {
         this.evolutionStage++;
         this.level = 1; // RESET Level to 1
@@ -749,6 +757,11 @@ export class Insect {
         // Current: 20 * 1.8^N
         this.xpToNext = 20 * Math.pow(1.8, this.evolutionStage);
         this.xpToNext = Math.floor(this.xpToNext);
+
+        if (this.evolutionStage > this.maxStageReached) {
+            this.maxStageReached = this.evolutionStage;
+            console.log("Max Stage Reached Updated:", this.maxStageReached);
+        }
 
         let formName = "";
 

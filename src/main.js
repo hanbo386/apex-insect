@@ -16,6 +16,22 @@ const ctx = canvas.getContext('2d');
 const mobileControls = new MobileControls(); // Initialize Mobile Controls
 let width, height;
 
+// --- PERSISTENT STORAGE ---
+let evoPoints = parseInt(localStorage.getItem('apex_evo_points') || '0');
+function saveEvoPoints() {
+    localStorage.setItem('apex_evo_points', evoPoints);
+}
+
+let isGamePaused = false; // Pause flag
+let gameLoopId = null;
+
+
+// DEBUG LOGGING UTILITY
+function logState(msg) {
+    console.log(`[${new Date().toISOString().split('T')[1]}] [GameState] ${msg}`);
+}
+
+
 function resize() {
     width = window.innerWidth;
     height = window.innerHeight;
@@ -63,6 +79,123 @@ document.getElementById('start-quest-btn').addEventListener('click', () => {
     if (player.titanQuest) player.titanQuest.active = true;
 });
 
+// --- REVIVE MODAL ---
+const reviveModal = document.createElement('div');
+reviveModal.id = 'revive-modal';
+reviveModal.style.cssText = `
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(40, 0, 0, 0.9); display: none; flex-direction: column;
+    justify-content: center; align-items: center; z-index: 2000; color: #fff;
+    font-family: 'Courier New', monospace; text-align: center;
+`;
+reviveModal.innerHTML = `
+    <h1 style="font-size: 50px; color: #ff0000; margin-bottom: 20px;">GAME OVER</h1>
+    <p style="font-size: 20px; color: #ccc;">The apex cycle is broken.</p>
+    <div style="margin: 30px; padding: 20px; border: 1px solid #444; background: #111;">
+        <p style="font-size: 18px; color: #ffd700;">Evolution Points: <span id="revive-points-display">0</span></p>
+        <p style="font-size: 18px; color: #ff3d00;">Revive Cost: <span id="revive-cost-display">0</span></p>
+    </div>
+    <div style="display: flex; gap: 20px;">
+        <button id="revive-btn" style="padding: 15px 30px; font-size: 20px; background: #ff3d00; color: #fff; border: none; cursor: pointer; font-weight: bold;">
+            REVIVE
+        </button>
+        <button id="restart-btn" style="padding: 15px 30px; font-size: 20px; background: #333; color: #fff; border: 1px solid #666; cursor: pointer;">
+            RESTART
+        </button>
+    </div>
+`;
+document.body.appendChild(reviveModal);
+
+// Revive Logic
+let reviveCost = 0;
+document.getElementById('restart-btn').addEventListener('click', () => {
+    logState("Restart Clicked. Reloading...");
+    location.reload();
+});
+document.getElementById('revive-btn').addEventListener('click', () => {
+    logState("Revive Button Clicked.");
+    if (evoPoints >= reviveCost) {
+        logState("Sufficient Points. Processing Revive...");
+        evoPoints -= reviveCost;
+        saveEvoPoints();
+
+        reviveModal.style.display = 'none';
+
+        // Reset Keys to prevent stuck movement
+        Object.keys(keys).forEach(k => keys[k] = false);
+
+        // Restore Player
+        player.stamina = player.maxStamina;
+        player.pos = new Vec2(0, 0); // Reset position to safe zone
+        player.restoreMaxStage(); // Restore to highest stage achieved
+        logState("Player Reset to (0,0) and Stage Restored.");
+
+        // --- ACTION: Clear All NPCs ---
+        creeps.length = 0;
+        logState("Enemies Cleared.");
+
+        texts.push(new FloatingText(player.pos.x, player.pos.y - 100, "REVIVED!", "#ffd700", 50));
+
+        isGamePaused = false; // RESUME GAME
+        logState("Game Unpaused. Resuming Loop.");
+
+        // FORCE RESTART LOOP
+        if (gameLoopId) cancelAnimationFrame(gameLoopId);
+        gameLoop();
+
+    } else {
+        alert("Not enough points!");
+    }
+});
+
+function showReviveModal() {
+    if (isGamePaused) return; // Prevent multiple calls
+    logState("Player Died. Showing Revive Modal.");
+    isGamePaused = true; // PAUSE GAME
+
+    // Tiered Revive Cost
+    const stage = player.evolutionStage;
+    if (stage === 0) reviveCost = 1;
+    else if (stage === 1) reviveCost = 2;
+    else if (stage === 2) reviveCost = 3;
+    else if (stage < 5) reviveCost = stage * 2;
+    else reviveCost = stage * 5;
+    document.getElementById('revive-points-display').innerText = evoPoints;
+    document.getElementById('revive-cost-display').innerText = reviveCost;
+    document.getElementById('revive-btn').style.opacity = (evoPoints >= reviveCost) ? '1' : '0.5';
+    document.getElementById('revive-btn').style.cursor = (evoPoints >= reviveCost) ? 'pointer' : 'not-allowed';
+    reviveModal.style.display = 'flex';
+}
+
+// --- EVOLUTION EGG CLASS ---
+class EvolutionEgg {
+    constructor(x, y) {
+        this.pos = new Vec2(x, y);
+        this.isEgg = true;
+        this.timer = Math.random() * 100;
+        this.scale = 1.0;
+        this.size = 10;
+        this.dead = false;
+    }
+    update() {
+        this.timer += 0.1;
+    }
+    draw(ctx) {
+        const pulse = 1.0 + Math.sin(this.timer) * 0.1;
+        ctx.save();
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#00ffcc';
+        ctx.fillStyle = '#e0ffff';
+        ctx.beginPath();
+        // Scale with world
+        let s = this.scale || 1.0;
+        ctx.ellipse(this.pos.x, this.pos.y, 8 * s * pulse, 10 * s * pulse, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+
 function updateUI() {
     // 0: 原始种 (Primitive)
     // 1: 蚂蚁 (Ant)
@@ -102,6 +235,9 @@ function updateUI() {
         <span style="color:${player.titanQuest.tarantulas >= player.titanQuest.reqTarantulas ? '#0f0' : '#aaa'}">Tarantulas: ${player.titanQuest.tarantulas}/${player.titanQuest.reqTarantulas}</span>`;
         statusText.innerHTML += questHTML;
     }
+
+    // Revive Points Display
+    statusText.innerHTML += `<br><span style="font-size: 16px; color: #00ffcc; font-weight: bold;">Evo Points (Revives): ${evoPoints}</span>`;
 }
 
 // Input handling
@@ -321,6 +457,17 @@ function spawnCreeps() {
     let dist = visibleRadius + 100 + Math.random() * 400;
     let spawnPos = player.pos.add(new Vec2(Math.cos(angle), Math.sin(angle)).mult(dist));
 
+    // Weighted Spawning Logic: 35% Chance for Evolution Egg
+    if (Math.random() < 0.35) {
+        let egg = new EvolutionEgg(spawnPos.x, spawnPos.y);
+        // Apply scale
+        if (player.worldScaleDivisor && player.worldScaleDivisor > 1.0) {
+            egg.scale /= player.worldScaleDivisor;
+        }
+        creeps.push(egg);
+        return;
+    }
+
     // Weighted Spawning Logic
     // FIX: Maintain constant ratio of Rivals vs Food regardless of player level
     // 70% Food, 30% Chance for Rival Logic
@@ -422,640 +569,681 @@ function spawnCreeps() {
 
 
 function gameLoop() {
-    let input = {
-        up: keys.KeyW || keys.ArrowUp,
-        down: keys.KeyS || keys.ArrowDown,
-        left: keys.KeyA || keys.ArrowLeft,
-        right: keys.KeyD || keys.ArrowRight,
-        shift: keys.ShiftLeft || keys.ShiftRight,
-        attack: keys.Space,
-        mouseDown: keys.MouseDown
-    };
+    if (isGamePaused) {
+        // Just loop without update
+        if (Math.random() < 0.01) logState("Game Paused... Loop Inactive.");
+        gameLoopId = requestAnimationFrame(gameLoop);
+        return;
+    }
 
-    // Integrate Mobile Controls
-    if (mobileControls.isActive()) {
-        const joy = mobileControls.getMoveVector();
-        if (joy.x !== 0 || joy.y !== 0) {
-            input.moveVector = joy;
+    try {
+        let input = {
+            up: keys.KeyW || keys.ArrowUp,
+            down: keys.KeyS || keys.ArrowDown,
+            left: keys.KeyA || keys.ArrowLeft,
+            right: keys.KeyD || keys.ArrowRight,
+            shift: keys.ShiftLeft || keys.ShiftRight,
+            attack: keys.Space,
+            mouseDown: keys.MouseDown
+        };
+
+        // Integrate Mobile Controls
+        if (mobileControls.isActive()) {
+            const joy = mobileControls.getMoveVector();
+            if (joy.x !== 0 || joy.y !== 0) {
+                input.moveVector = joy;
+            }
+            if (mobileControls.isSprinting()) input.shift = true;
+            if (mobileControls.isAttacking()) input.attack = true;
         }
-        if (mobileControls.isSprinting()) input.shift = true;
-        if (mobileControls.isAttacking()) input.attack = true;
-    }
 
-    player.update(input);
-
-    // --- OBSTACLE COLLISION LOGIC ---
-    // 1. LEAVES: Only Primitive(0) and Ant(1) blocked.
-    // 2. PUDDLES: ALL creatures in Scene 1 blocked.
-    // "Scene 1" implies Tier 1 (no world scale divisor / or low scaler).
-    // Assuming standard world = Scene 1.
-    // Even High Stages (Titans) can't cross puddles in Scene 1.
-
-    // Check type of collision
-    let currentTier = (player.worldScaleModifier && player.worldScaleModifier <= 0.5) ? 2 : 1;
-    let obstacleHit = env.checkObstacleCollision(player.pos.x, player.pos.y, 1.0, player.evolutionStage <= 1, true, currentTier);
-
-    if (obstacleHit) {
-        let obsPos = new Vec2(obstacleHit.x, obstacleHit.y);
-        let pushDir = player.pos.sub(obsPos).normalize();
-        if (pushDir.mag() === 0) pushDir = new Vec2(Math.random() - 0.5, Math.random() - 0.5).normalize();
-
-        let overlap = (obstacleHit.radius + 10 * player.scale) - player.pos.dist(obsPos);
-        if (overlap > 0) {
-            player.pos = player.pos.add(pushDir.mult(overlap));
-            // Optional: Bounce velocity
-            // player.vel = player.vel.add(pushDir.mult(5));
+        // --- DEBUG: HEARTBEAT & NAN CHECK ---
+        if (Math.random() < 0.01) { // Approx once per second
+            console.log(`[Loop] P:(${player.pos.x.toFixed(1)},${player.pos.y.toFixed(1)}) Cam:(${camera.x.toFixed(1)},${camera.y.toFixed(1)}) Scale:${window.gameScale?.toFixed(2)}`);
         }
-    }
+        if (isNaN(player.pos.x) || isNaN(player.pos.y)) {
+            console.error("CRITICAL: Player Position is NaN! Resetting...");
+            player.pos = new Vec2(0, 0);
+        }
+        if (isNaN(camera.x) || isNaN(camera.y)) {
+            console.error("CRITICAL: Camera is NaN! Resetting...");
+            camera = new Vec2(player.pos.x - width / 2, player.pos.y - height / 2);
+        }
+        // ------------------------------------
 
-    updateUI();
+        player.update(input);
 
-    // Creep Logic
-    // Dynamic generation count based on zoom
-    // Base: 30. If scale 0.15 => 30 / 0.15 = 200. Cap at 150 to prevent lag.
-    let currentScale = window.gameScale || 1.0;
+        // --- OBSTACLE COLLISION LOGIC ---
+        // 1. LEAVES: Only Primitive(0) and Ant(1) blocked.
+        // 2. PUDDLES: ALL creatures in Scene 1 blocked.
+        // "Scene 1" implies Tier 1 (no world scale divisor / or low scaler).
+        // Assuming standard world = Scene 1.
+        // Even High Stages (Titans) can't cross puddles in Scene 1.
 
-    // We want density to remain somewhat constant. Area scales with 1/scale^2.
-    // However, linear scaling (1/scale) explodes at low zoom (Spider).
-    // Use sqrt scaling for a softer curve, and cap absolute max.
-    // At scale 0.1 (Spider): 8 / 0.1 = 80 (Too many).
-    // 8 / sqrt(0.1) = 8 / 0.31 = 25 (Better).
-    // Let's also hard cap it to avoid performance issues.
-    let limitBase = MAX_CREEPS;
-    if (player.evolutionStage === 0) limitBase = MAX_CREEPS * 2; // Double for primitive
-    if (player.form === 'MANTIS') limitBase = 6; // Hard cap for Mantis to avoid clutter
-    let dynamicLimit = Math.min(15, Math.floor(limitBase / Math.sqrt(currentScale)));
+        // Check type of collision
+        let currentTier = (player.worldScaleModifier && player.worldScaleModifier <= 0.5) ? 2 : 1;
+        let obstacleHit = env.checkObstacleCollision(player.pos.x, player.pos.y, 1.0, player.evolutionStage <= 1, true, currentTier);
 
-    if (creeps.length < dynamicLimit) {
-        // Double spawn rate for primitive to fill the increased limit faster
-        let spawnChance = player.evolutionStage === 0 ? 0.2 : 0.1;
-        if (Math.random() < spawnChance) spawnCreeps();
-    }
+        if (obstacleHit) {
+            let obsPos = new Vec2(obstacleHit.x, obstacleHit.y);
+            let pushDir = player.pos.sub(obsPos).normalize();
+            if (pushDir.mag() === 0) pushDir = new Vec2(Math.random() - 0.5, Math.random() - 0.5).normalize();
 
-    for (let i = creeps.length - 1; i >= 0; i--) {
-        let c = creeps[i];
+            let overlap = (obstacleHit.radius + 10 * player.scale) - player.pos.dist(obsPos);
+            if (overlap > 0) {
+                player.pos = player.pos.add(pushDir.mult(overlap));
+                // Optional: Bounce velocity
+                // player.vel = player.vel.add(pushDir.mult(5));
+            }
+        }
 
-        if (c.hitCooldown && c.hitCooldown > 0) c.hitCooldown--;
+        updateUI();
 
-        if (c.isRival) {
-            // Rival AI Logic
-            if (player.form === 'TITAN') {
-                // Swarm Logic: Follow the Sovereign
-                // Smoothly steer towards player but keep distance
-                let diff = player.pos.sub(c.pos);
-                let dist = diff.mag();
-                let desiredDist = 150 * player.scale;
+        // Creep Logic
+        // Dynamic generation count based on zoom
+        // Base: 30. If scale 0.15 => 30 / 0.15 = 200. Cap at 150 to prevent lag.
+        let currentScale = window.gameScale || 1.0;
 
-                let targetPos = player.pos; // Default to player center
+        // We want density to remain somewhat constant. Area scales with 1/scale^2.
+        // However, linear scaling (1/scale) explodes at low zoom (Spider).
+        // Use sqrt scaling for a softer curve, and cap absolute max.
+        // At scale 0.1 (Spider): 8 / 0.1 = 80 (Too many).
+        // 8 / sqrt(0.1) = 8 / 0.31 = 25 (Better).
+        // Let's also hard cap it to avoid performance issues.
+        let limitBase = MAX_CREEPS;
+        if (player.evolutionStage === 0) limitBase = MAX_CREEPS * 2; // Double for primitive
+        if (player.form === 'MANTIS') limitBase = 6; // Hard cap for Mantis to avoid clutter
+        let dynamicLimit = Math.min(15, Math.floor(limitBase / Math.sqrt(currentScale)));
 
-                // If too close, circle or back away?
-                // Simple flocking: Move towards player
-                let angleToPlayer = Math.atan2(diff.y, diff.x);
+        if (creeps.length < dynamicLimit) {
+            // Double spawn rate for primitive to fill the increased limit faster
+            let spawnChance = player.evolutionStage === 0 ? 0.2 : 0.1;
+            if (Math.random() < spawnChance) spawnCreeps();
+        }
 
-                // Steer angle smoothly
-                let currentAngle = c.angle;
-                let angleDiff = angleToPlayer - currentAngle;
-                // Normalize angle
-                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        for (let i = creeps.length - 1; i >= 0; i--) {
+            let c = creeps[i];
 
-                c.angle += Math.max(-0.05, Math.min(0.05, angleDiff));
+            // --- EGG LOGIC ---
+            if (c.isEgg) {
+                let dist = player.pos.dist(c.pos);
+                let eatRange = (40 * player.scale) + (10 * c.scale);
+                if (dist < eatRange) {
+                    evoPoints++;
+                    saveEvoPoints();
+                    createParticles(c.pos.x, c.pos.y, '#00ffcc', 8 * c.scale, 10);
+                    texts.push(new FloatingText(player.pos.x, player.pos.y - 50 * player.scale, "+1 复活点数", "#00ffcc", 30));
+                    creeps.splice(i, 1);
+                    continue;
+                }
+            }
 
-                let npcSpeed = 3.0 * (c.scale || 1.0); // Faster to keep up
-                if (dist < desiredDist) npcSpeed *= 0.5; // Slow down if close
+            if (c.hitCooldown && c.hitCooldown > 0) c.hitCooldown--;
 
-                c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(npcSpeed);
-                c.pos = c.pos.add(c.vel);
-                c.speed = npcSpeed;
+            if (c.isRival) {
+                // Rival AI Logic
+                if (player.form === 'TITAN') {
+                    // Swarm Logic: Follow the Sovereign
+                    // Smoothly steer towards player but keep distance
+                    let diff = player.pos.sub(c.pos);
+                    let dist = diff.mag();
+                    let desiredDist = 150 * player.scale;
 
-                c.update(c.pos, c.angle, c.vel); // Update legs
-            } else {
-                // --- RIVAL AI LOGIC ---
-                let distToPlayer = c.pos.dist(player.pos);
-                let visionRange = (c.visionRadius || 400) * (c.scale || 1.0);
-                let isFocused = false;
+                    let targetPos = player.pos; // Default to player center
 
-                // 0. PRIORITY FLEE (From Attack)
-                if (c.isFleeing && c.fleeTimer > 0) {
-                    isFocused = true;
-                    c.fleeTimer--;
-                    if (c.fleeTimer <= 0) c.isFleeing = false;
+                    // If too close, circle or back away?
+                    // Simple flocking: Move towards player
+                    let angleToPlayer = Math.atan2(diff.y, diff.x);
 
-                    // Flee from player
-                    let angleAway = Math.atan2(c.pos.y - player.pos.y, c.pos.x - player.pos.x);
-                    let angleDiff = angleAway - c.angle;
+                    // Steer angle smoothly
+                    let currentAngle = c.angle;
+                    let angleDiff = angleToPlayer - currentAngle;
+                    // Normalize angle
                     while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
                     while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-                    c.angle += Math.max(-0.15, Math.min(0.15, angleDiff)); // Fast turn
 
-                    let speed = 4.0 * (c.scale || 1.0);
-                    c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(speed);
-                }
+                    c.angle += Math.max(-0.05, Math.min(0.05, angleDiff));
 
-                // 1. PREDATOR BEHAVIOR (Higher Stage)
-                // Initialize Timers if undefined
-                if (c.chaseTimer === undefined) c.chaseTimer = 0;
-                if (c.chaseCooldown === undefined) c.chaseCooldown = 0;
+                    let npcSpeed = 3.0 * (c.scale || 1.0); // Faster to keep up
+                    if (dist < desiredDist) npcSpeed *= 0.5; // Slow down if close
 
-                // Handle Cooldown
-                if (c.chaseCooldown > 0) {
-                    c.chaseCooldown--;
-                    // Must wander if cooling down
-                    isFocused = false;
-                } else if (c.evolutionStage > player.evolutionStage && distToPlayer < visionRange * 0.6) {
-                    // Chase Logic
-                    isFocused = true;
+                    c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(npcSpeed);
+                    c.pos = c.pos.add(c.vel);
+                    c.speed = npcSpeed;
 
-                    // Increment Timer
-                    c.chaseTimer++;
-                    if (c.chaseTimer > 180) { // > 3 Seconds (assuming 60fps)
-                        // Stop Chasing!
+                    c.update(c.pos, c.angle, c.vel); // Update legs
+                } else {
+                    // --- RIVAL AI LOGIC ---
+                    let distToPlayer = c.pos.dist(player.pos);
+                    let visionRange = (c.visionRadius || 400) * (c.scale || 1.0);
+                    let isFocused = false;
+
+                    // 0. PRIORITY FLEE (From Attack)
+                    if (c.isFleeing && c.fleeTimer > 0) {
+                        isFocused = true;
+                        c.fleeTimer--;
+                        if (c.fleeTimer <= 0) c.isFleeing = false;
+
+                        // Flee from player
+                        let angleAway = Math.atan2(c.pos.y - player.pos.y, c.pos.x - player.pos.x);
+                        let angleDiff = angleAway - c.angle;
+                        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                        c.angle += Math.max(-0.15, Math.min(0.15, angleDiff)); // Fast turn
+
+                        let speed = 4.0 * (c.scale || 1.0);
+                        c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(speed);
+                    }
+
+                    // 1. PREDATOR BEHAVIOR (Higher Stage)
+                    // Initialize Timers if undefined
+                    if (c.chaseTimer === undefined) c.chaseTimer = 0;
+                    if (c.chaseCooldown === undefined) c.chaseCooldown = 0;
+
+                    // Handle Cooldown
+                    if (c.chaseCooldown > 0) {
+                        c.chaseCooldown--;
+                        // Must wander if cooling down
                         isFocused = false;
-                        c.chaseCooldown = 180; // 3 Second Cooldown
-                        c.chaseTimer = 0;
+                    } else if (c.evolutionStage > player.evolutionStage && distToPlayer < visionRange * 0.6) {
+                        // Chase Logic
+                        isFocused = true;
+
+                        // Increment Timer
+                        c.chaseTimer++;
+                        if (c.chaseTimer > 180) { // > 3 Seconds (assuming 60fps)
+                            // Stop Chasing!
+                            isFocused = false;
+                            c.chaseCooldown = 180; // 3 Second Cooldown
+                            c.chaseTimer = 0;
+                        } else {
+                            // Actual Movement
+                            let angleToPlayer = Math.atan2(player.pos.y - c.pos.y, player.pos.x - c.pos.x);
+                            let angleDiff = angleToPlayer - c.angle;
+                            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                            c.angle += Math.max(-0.1, Math.min(0.1, angleDiff));
+
+                            let chaseSpeed = 3.5 * (c.scale || 1.0);
+                            c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(chaseSpeed);
+
+                            if (distToPlayer < 40 * c.scale) {
+                                // CAUGHT!
+                                if (player.evolutionStage <= 1) {
+                                    // Game Over if Ant(1) or Primitive(0)
+                                    logState("Player caught by predator. Triggering Revive Modal.");
+                                    showReviveModal();
+                                    return;
+                                }
+
+                                if (player.evolutionStage > 0) {
+                                    player.devolve();
+                                    createParticles(player.pos.x, player.pos.y, '#ff0000', 30 * player.scale, 20);
+                                    let pushDir = player.pos.sub(c.pos).normalize();
+                                    player.pos = player.pos.add(pushDir.mult(150));
+                                }
+                            }
+                        }
                     } else {
-                        // Actual Movement
-                        let angleToPlayer = Math.atan2(player.pos.y - c.pos.y, player.pos.x - c.pos.x);
-                        let angleDiff = angleToPlayer - c.angle;
+                        // Not Chasing (Out of range or cooldown just started in else block logic? No, covered by isFocused reset)
+                        // Reset chase timer if we lost interest naturally
+                        c.chaseTimer = 0;
+                    }
+                    if (c.isDead) continue; // Skip updates for doomed creeps
+                    // 2. PREY BEHAVIOR (Lower Stage)
+                    else if (c.evolutionStage < player.evolutionStage && distToPlayer < visionRange) {
+                        // Flee!
+                        isFocused = true;
+                        let angleAway = Math.atan2(c.pos.y - player.pos.y, c.pos.x - player.pos.x);
+                        let angleDiff = angleAway - c.angle;
                         while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
                         while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
                         c.angle += Math.max(-0.1, Math.min(0.1, angleDiff));
 
-                        let chaseSpeed = 3.5 * (c.scale || 1.0);
-                        c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(chaseSpeed);
+                        let fleeSpeed = 3.8 * (c.scale || 1.0);
+                        c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(fleeSpeed);
+                    }
 
-                        if (distToPlayer < 40 * c.scale) {
-                            // CAUGHT!
-                            if (player.evolutionStage <= 1) {
-                                // Game Over if Ant(1) or Primitive(0)
-                                alert("游戏失败！你被捕食了。");
-                                location.reload();
-                                return;
-                            }
-
-                            if (player.evolutionStage > 0) {
-                                player.devolve();
-                                createParticles(player.pos.x, player.pos.y, '#ff0000', 30 * player.scale, 20);
-                                let pushDir = player.pos.sub(c.pos).normalize();
-                                player.pos = player.pos.add(pushDir.mult(150));
-                            }
+                    // 3. WANDER (Default)
+                    if (!isFocused) {
+                        // Guard against overriding Attack Lunge Velocity
+                        if (!(c.form === 'TARANTULA' && c.predationState === 'attacking')) {
+                            c.angle += (Math.random() - 0.5) * 0.2;
+                            let wanderSpeed = 1.5 * (c.scale || 1.0);
+                            c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(wanderSpeed);
                         }
                     }
-                } else {
-                    // Not Chasing (Out of range or cooldown just started in else block logic? No, covered by isFocused reset)
-                    // Reset chase timer if we lost interest naturally
-                    c.chaseTimer = 0;
-                }
-                if (c.isDead) continue; // Skip updates for doomed creeps
-                // 2. PREY BEHAVIOR (Lower Stage)
-                else if (c.evolutionStage < player.evolutionStage && distToPlayer < visionRange) {
-                    // Flee!
-                    isFocused = true;
-                    let angleAway = Math.atan2(c.pos.y - player.pos.y, c.pos.x - player.pos.x);
-                    let angleDiff = angleAway - c.angle;
-                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-                    c.angle += Math.max(-0.1, Math.min(0.1, angleDiff));
 
-                    let fleeSpeed = 3.8 * (c.scale || 1.0);
-                    c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(fleeSpeed);
-                }
+                    if (c.form === 'TARANTULA') {
+                        // Tarantula uses advanced physics (friction/lunge) handles its own pos integration
+                        c.updateTarantula({});
+                    } else {
+                        // Standard Integration
+                        c.pos = c.pos.add(c.vel);
+                    }
 
-                // 3. WANDER (Default)
-                if (!isFocused) {
-                    // Guard against overriding Attack Lunge Velocity
-                    if (!(c.form === 'TARANTULA' && c.predationState === 'attacking')) {
-                        c.angle += (Math.random() - 0.5) * 0.2;
-                        let wanderSpeed = 1.5 * (c.scale || 1.0);
-                        c.vel = new Vec2(Math.cos(c.angle), Math.sin(c.angle)).mult(wanderSpeed);
+                    c.speed = c.vel.mag();
+
+                    c.thoraxPos = c.pos;
+                    c.headPos = c.pos.add(new Vec2(Math.cos(c.angle) * 5.5 * c.scale, Math.sin(c.angle) * 5.5 * c.scale));
+                    c.abdomenPos = c.pos.add(new Vec2(Math.cos(c.angle) * -7 * c.scale, Math.sin(c.angle) * -7 * c.scale));
+
+                    c.updateVisuals();
+
+                    // Manual Leg Updates
+                    if (c.legs) {
+                        c.legs.forEach(l => {
+                            if (l.update) l.update(c.pos, c.angle, c.vel, true);
+                        });
+                    }
+                    if (c.form === 'SCORPION') c.updateScorpion({});
+                    // Tarantula update called above
+                    if (c.form === 'GIANT_WETA') {
+                        if (c.wetaLegs) c.wetaLegs.forEach(leg => leg.update(c.pos, c.angle, c.vel, c.maxSpeed, c.scale));
+                        if (c.wetaAntennae) c.wetaAntennae.forEach((ant, i) => {
+                            let side = (i === 0) ? -1 : 1;
+                            ant.update(c.pos, c.angle, side);
+                        });
                     }
                 }
+                c.updateVisuals();
 
-                if (c.form === 'TARANTULA') {
-                    // Tarantula uses advanced physics (friction/lunge) handles its own pos integration
-                    c.updateTarantula({});
-                } else {
-                    // Standard Integration
-                    c.pos = c.pos.add(c.vel);
-                }
 
-                c.speed = c.vel.mag();
-
+                // Update body parts
                 c.thoraxPos = c.pos;
                 c.headPos = c.pos.add(new Vec2(Math.cos(c.angle) * 5.5 * c.scale, Math.sin(c.angle) * 5.5 * c.scale));
                 c.abdomenPos = c.pos.add(new Vec2(Math.cos(c.angle) * -7 * c.scale, Math.sin(c.angle) * -7 * c.scale));
 
-                c.updateVisuals();
-
-                // Manual Leg Updates
-                if (c.legs) {
-                    c.legs.forEach(l => {
-                        if (l.update) l.update(c.pos, c.angle, c.vel, true);
-                    });
-                }
-                if (c.form === 'SCORPION') c.updateScorpion({});
-                // Tarantula update called above
-                if (c.form === 'GIANT_WETA') {
+                if (c.form === 'SCORPION') {
+                    c.updateScorpion({});
+                } else if (c.form === 'GIANT_WETA') {
                     if (c.wetaLegs) c.wetaLegs.forEach(leg => leg.update(c.pos, c.angle, c.vel, c.maxSpeed, c.scale));
                     if (c.wetaAntennae) c.wetaAntennae.forEach((ant, i) => {
                         let side = (i === 0) ? -1 : 1;
                         ant.update(c.pos, c.angle, side);
                     });
+                } else if (c.form === 'STICK_INSECT') {
+                    c.updateStickInsect({});
+                } else if (c.form === 'COCKROACH') {
+                    c.updateCockroach({});
+                } else if (c.form === 'MANTIS') {
+                    c.updateMantis({});
+                }
+                // Standard Legs (Scorpion legs list is empty, so this is safe to leave or wrap)
+                c.legs.forEach(l => l.update(c.thoraxPos, c.angle, c.vel, true));
+            } else {
+                // Food Logic
+                c.update();
+            }
+
+            // --- NPC OBSTACLE COLLISION ---
+            // NPCs must also go around puddles.
+            // Leaf logic for NPCs: Assuming same rule (Low stage < 2 blocked).
+            let npcStage = c.evolutionStage || 0;
+            let npcRadius = (c.size || 10) * (c.scale || 1.0);
+            let nTier = currentTier; // Use same tier as player environment
+
+            let npcObs = env.checkObstacleCollision(c.pos.x, c.pos.y, npcRadius, npcStage <= 1, true, nTier);
+            if (npcObs) {
+                let obsPos = new Vec2(npcObs.x, npcObs.y);
+                let pushDir = c.pos.sub(obsPos).normalize();
+                if (pushDir.mag() === 0) pushDir = new Vec2(Math.random() - 0.5, Math.random() - 0.5).normalize();
+
+                let overlap = (npcObs.radius + npcRadius) - c.pos.dist(obsPos);
+                if (overlap > 0) {
+                    c.pos = c.pos.add(pushDir.mult(overlap));
+                    // Add avoidance force to velocity to help them steer around
+                    // c.vel = c.vel.add(pushDir.mult(0.5)); 
+                    // But simplified pos update is cleaner for now.
+
+                    // If standard update logic is used, changing pos is fine.
                 }
             }
-            c.updateVisuals();
 
-
-            // Update body parts
-            c.thoraxPos = c.pos;
-            c.headPos = c.pos.add(new Vec2(Math.cos(c.angle) * 5.5 * c.scale, Math.sin(c.angle) * 5.5 * c.scale));
-            c.abdomenPos = c.pos.add(new Vec2(Math.cos(c.angle) * -7 * c.scale, Math.sin(c.angle) * -7 * c.scale));
-
-            if (c.form === 'SCORPION') {
-                c.updateScorpion({});
-            } else if (c.form === 'GIANT_WETA') {
-                if (c.wetaLegs) c.wetaLegs.forEach(leg => leg.update(c.pos, c.angle, c.vel, c.maxSpeed, c.scale));
-                if (c.wetaAntennae) c.wetaAntennae.forEach((ant, i) => {
-                    let side = (i === 0) ? -1 : 1;
-                    ant.update(c.pos, c.angle, side);
-                });
-            } else if (c.form === 'STICK_INSECT') {
-                c.updateStickInsect({});
-            } else if (c.form === 'COCKROACH') {
-                c.updateCockroach({});
-            } else if (c.form === 'MANTIS') {
-                c.updateMantis({});
+            // 距离过远销毁
+            // Dynamic Despawn Range
+            let scale = window.gameScale || 1.0;
+            // Strict cull for Mantis to keep performance
+            let cullMult = player.form === 'MANTIS' ? 1.5 : 2.5;
+            let visibleRadius = Math.max(width, height) / scale / 2;
+            // Despawn if further than 2x visible radius (give some buffer)
+            if (c.pos.dist(player.pos) > visibleRadius * cullMult) {
+                creeps.splice(i, 1);
+                continue;
             }
-            // Standard Legs (Scorpion legs list is empty, so this is safe to leave or wrap)
-            c.legs.forEach(l => l.update(c.thoraxPos, c.angle, c.vel, true));
-        } else {
-            // Food Logic
-            c.update();
-        }
 
-        // --- NPC OBSTACLE COLLISION ---
-        // NPCs must also go around puddles.
-        // Leaf logic for NPCs: Assuming same rule (Low stage < 2 blocked).
-        let npcStage = c.evolutionStage || 0;
-        let npcRadius = (c.size || 10) * (c.scale || 1.0);
-        let nTier = currentTier; // Use same tier as player environment
-
-        let npcObs = env.checkObstacleCollision(c.pos.x, c.pos.y, npcRadius, npcStage <= 1, true, nTier);
-        if (npcObs) {
-            let obsPos = new Vec2(npcObs.x, npcObs.y);
-            let pushDir = c.pos.sub(obsPos).normalize();
-            if (pushDir.mag() === 0) pushDir = new Vec2(Math.random() - 0.5, Math.random() - 0.5).normalize();
-
-            let overlap = (npcObs.radius + npcRadius) - c.pos.dist(obsPos);
-            if (overlap > 0) {
-                c.pos = c.pos.add(pushDir.mult(overlap));
-                // Add avoidance force to velocity to help them steer around
-                // c.vel = c.vel.add(pushDir.mult(0.5)); 
-                // But simplified pos update is cleaner for now.
-
-                // If standard update logic is used, changing pos is fine.
+            // Despawn if too weak (Old stage creeps)
+            // Keep world clean of low level trash
+            // Treat undefined (Food) as -1
+            let stage = c.evolutionStage !== undefined ? c.evolutionStage : -1;
+            if (stage < player.evolutionStage - 2) {
+                creeps.splice(i, 1);
+                continue;
             }
-        }
 
-        // 距离过远销毁
-        // Dynamic Despawn Range
-        let scale = window.gameScale || 1.0;
-        // Strict cull for Mantis to keep performance
-        let cullMult = player.form === 'MANTIS' ? 1.5 : 2.5;
-        let visibleRadius = Math.max(width, height) / scale / 2;
-        // Despawn if further than 2x visible radius (give some buffer)
-        if (c.pos.dist(player.pos) > visibleRadius * cullMult) {
-            creeps.splice(i, 1);
-            continue;
-        }
+            // 碰撞/进食检测
+            // Replaced simple dist check with robust body checking OR Attack Range for Lunge
+            let eatRange = player.getEatRange ? player.getEatRange() : 50 * player.scale;
+            // Use generic distance check for trigger to allow Mantis Lunge to start early
+            let distToCreep = player.pos.dist(c.pos);
+            // Debug Log for Mantis Trigger
+            if (player.form === 'MANTIS' && distToCreep < eatRange) {
+                console.log(`[Main] MANTIS TRIGGER! Dist: ${distToCreep.toFixed(1)} < EatRange: ${eatRange.toFixed(1)}`);
+            }
 
-        // Despawn if too weak (Old stage creeps)
-        // Keep world clean of low level trash
-        // Treat undefined (Food) as -1
-        let stage = c.evolutionStage !== undefined ? c.evolutionStage : -1;
-        if (stage < player.evolutionStage - 2) {
-            creeps.splice(i, 1);
-            continue;
-        }
+            // Collision OR In Range (for Mantis/Spider)
+            if (checkCollision(player, c) || ((player.form === 'MANTIS' || player.form === 'GIANT_WETA') && distToCreep < eatRange)) {
 
-        // 碰撞/进食检测
-        // Replaced simple dist check with robust body checking OR Attack Range for Lunge
-        let eatRange = player.getEatRange ? player.getEatRange() : 50 * player.scale;
-        // Use generic distance check for trigger to allow Mantis Lunge to start early
-        let distToCreep = player.pos.dist(c.pos);
-        // Debug Log for Mantis Trigger
-        if (player.form === 'MANTIS' && distToCreep < eatRange) {
-            console.log(`[Main] MANTIS TRIGGER! Dist: ${distToCreep.toFixed(1)} < EatRange: ${eatRange.toFixed(1)}`);
-        }
-
-        // Collision OR In Range (for Mantis/Spider)
-        if (checkCollision(player, c) || ((player.form === 'MANTIS' || player.form === 'GIANT_WETA') && distToCreep < eatRange)) {
-
-            // Restriction Logic:
-            // 1. Stage Comparison First
-            if (c.isRival) {
-                // TITAN Swarm Leader Logic: No eating, no attacking for TITAN
-                if (player.form === 'TITAN') {
-                    // Do nothing (don't eat, don't get hurt)
-                    // Just push gently to avoid clipping
-                    let pushDir = c.pos.sub(player.pos).normalize();
-                    c.pos = c.pos.add(pushDir.mult(5));
-                    continue;
-                }
-
-                if (c.evolutionStage > player.evolutionStage) {
-                    // Enemy Stage is Higher: CANNOT EAT. Bounce.
-                    let pushDir = c.pos.sub(player.pos).normalize();
-                    c.pos = c.pos.add(pushDir.mult(5));
-                    continue;
-                } else if (c.evolutionStage < player.evolutionStage || (player.titanQuest && player.titanQuest.active && c.evolutionStage === 12 && player.evolutionStage === 12)) {
-                    // Enemy Stage is Lower (OR it's a Scorpion vs Scorpion Quest Kill)
-                    // Normally equal stage can't eat, but for the Titan ritual, the Scorpion must cannibalize other Scorpions.
-                    // This creates a loophole where Player Scorpion can eat NPC Scorpion if Quest is active.
-
-                    if (player.titanQuest && player.titanQuest.active && c.evolutionStage === 12 && player.evolutionStage === 12) {
-                        // Special check: Is it actually safe to eat? Or should we check Level?
-                        // Let's allow it regardless of level for the "Ritual" feel, or keep level logic?
-                        // If we want it strictly "Lower", this block wouldn't be entered.
-                        // But since we are here due to OR condition:
-                        if (c.level > player.level) {
-                            // Still respect level hierarchy? The prompt implies "Eating 50 Scorpions".
-                            // Usually you can only eat lower level.
-                            // If we fail level check, we bounce.
-                            let pushDir = c.pos.sub(player.pos).normalize();
-                            c.pos = c.pos.add(pushDir.mult(5));
-                            continue;
-                        }
-                    }
-
-                    // THIS IS WHERE PREY DEATH HAPPENS for RIVALS lower than player.
-
-                    // Counting moved to consumeCallback to prevent collision spam
-
-                    // (Proceed to eat logic below)
-                } else {
-                    // Stages are EQUAL: Compare Level
-                    if (c.level > player.level) {
-                        // Enemy Level is Higher: CANNOT EAT. Bounce.
+                // Restriction Logic:
+                // 1. Stage Comparison First
+                if (c.isRival) {
+                    // TITAN Swarm Leader Logic: No eating, no attacking for TITAN
+                    if (player.form === 'TITAN') {
+                        // Do nothing (don't eat, don't get hurt)
+                        // Just push gently to avoid clipping
                         let pushDir = c.pos.sub(player.pos).normalize();
                         c.pos = c.pos.add(pushDir.mult(5));
                         continue;
                     }
-                    // Else (Level <= Player): EAT.
-                }
-            }
 
-            // Eat!
-            // Unified Predation Logic (Spider & Generic)
+                    if (c.evolutionStage > player.evolutionStage) {
+                        // Enemy Stage is Higher: CANNOT EAT. Bounce.
+                        let pushDir = c.pos.sub(player.pos).normalize();
+                        c.pos = c.pos.add(pushDir.mult(5));
+                        continue;
+                    } else if (c.evolutionStage < player.evolutionStage || (player.titanQuest && player.titanQuest.active && c.evolutionStage === 12 && player.evolutionStage === 12)) {
+                        // Enemy Stage is Lower (OR it's a Scorpion vs Scorpion Quest Kill)
+                        // Normally equal stage can't eat, but for the Titan ritual, the Scorpion must cannibalize other Scorpions.
+                        // This creates a loophole where Player Scorpion can eat NPC Scorpion if Quest is active.
 
-            const consumeCreep = (c) => {
-                if (c.isDead) return;
+                        if (player.titanQuest && player.titanQuest.active && c.evolutionStage === 12 && player.evolutionStage === 12) {
+                            // Special check: Is it actually safe to eat? Or should we check Level?
+                            // Let's allow it regardless of level for the "Ritual" feel, or keep level logic?
+                            // If we want it strictly "Lower", this block wouldn't be entered.
+                            // But since we are here due to OR condition:
+                            if (c.level > player.level) {
+                                // Still respect level hierarchy? The prompt implies "Eating 50 Scorpions".
+                                // Usually you can only eat lower level.
+                                // If we fail level check, we bounce.
+                                let pushDir = c.pos.sub(player.pos).normalize();
+                                c.pos = c.pos.add(pushDir.mult(5));
+                                continue;
+                            }
+                        }
 
-                // --- Special Logic: Tarantula vs Tarantula Duel ---
-                if (player.form === 'TARANTULA' && c.form === 'TARANTULA') {
-                    if (c.hitsTaken === undefined) c.hitsTaken = 0;
-                    if (c.hitCooldown === undefined) c.hitCooldown = 0;
+                        // THIS IS WHERE PREY DEATH HAPPENS for RIVALS lower than player.
 
-                    if (c.hitCooldown > 0) return; // Invulnerable
+                        // Counting moved to consumeCallback to prevent collision spam
 
-                    c.hitsTaken++;
-                    c.hitCooldown = 45; // Cooldown to prevent instant multi-hits
-
-                    // Visual Feedback (Damage)
-                    createParticles(c.pos.x, c.pos.y, '#8d6e63', 15 * c.scale, 10);
-
-                    // Knockback
-                    let bounce = c.pos.sub(player.pos).normalize().mult(50 * player.scale);
-                    c.pos = c.pos.add(bounce);
-
-                    if (c.hitsTaken < 3) {
-                        return; // Not dead yet
-                    }
-                }
-
-                c.isDead = true;
-
-                let idx = creeps.indexOf(c);
-                if (idx !== -1) {
-                    creeps.splice(idx, 1);
-
-                    // --- Shattering Effect (Body Parts) ---
-                    if (typeof c.shatter === 'function') {
-                        const parts = c.shatter();
-                        parts.forEach(p => {
-                            particles.push(new BodyPart(p.x, p.y, p.part, p.type, p.scale, p.vel, p.props));
-                        });
-                    } else if (c.headPos && c.colors && c.colors.head) {
-                        createParticles(c.pos.x, c.pos.y, c.colors.head || '#00aa00', (c.size || 5), 8);
+                        // (Proceed to eat logic below)
                     } else {
-                        createParticles(c.pos.x, c.pos.y, c.color || '#00aa00', (c.size || 5), 8);
+                        // Stages are EQUAL: Compare Level
+                        if (c.level > player.level) {
+                            // Enemy Level is Higher: CANNOT EAT. Bounce.
+                            let pushDir = c.pos.sub(player.pos).normalize();
+                            c.pos = c.pos.add(pushDir.mult(5));
+                            continue;
+                        }
+                        // Else (Level <= Player): EAT.
                     }
                 }
 
-                // XP Calculation
-                let stagePower = c.evolutionStage !== undefined ? Math.pow(1.5, c.evolutionStage) : 0;
-                let xpGain = c.isRival ? Math.floor(20 * stagePower) : (1 + Math.floor(c.size * (c.scale || 1)));
-                player.gainXp(xpGain);
+                // Eat!
+                // Unified Predation Logic (Spider & Generic)
 
-                // --- TITAN QUEST TRACKING ---
-                if (player.titanQuest && player.titanQuest.active && !player.titanQuest.complete) {
-                    if (c.evolutionStage === 12) player.titanQuest.scorpions++;
-                    else if (c.evolutionStage === 11) player.titanQuest.centipedes++;
-                    else if (c.evolutionStage === 10) player.titanQuest.tarantulas++;
+                const consumeCreep = (c) => {
+                    if (c.isDead) return;
 
-                    // Check Completion
-                    if (player.titanQuest.scorpions >= player.titanQuest.reqScorpions &&
-                        player.titanQuest.centipedes >= player.titanQuest.reqCentipedes &&
-                        player.titanQuest.tarantulas >= player.titanQuest.reqTarantulas) {
-                        player.titanQuest.complete = true;
-                        // TRIGGER EVOLUTION
-                        setTimeout(() => {
-                            createParticles(player.pos.x, player.pos.y, '#ff3d00', 50 * player.scale, 50); // Big explosion
-                            player.evolve();
-                        }, 500);
+                    // --- Special Logic: Tarantula vs Tarantula Duel ---
+                    if (player.form === 'TARANTULA' && c.form === 'TARANTULA') {
+                        if (c.hitsTaken === undefined) c.hitsTaken = 0;
+                        if (c.hitCooldown === undefined) c.hitCooldown = 0;
+
+                        if (c.hitCooldown > 0) return; // Invulnerable
+
+                        c.hitsTaken++;
+                        c.hitCooldown = 45; // Cooldown to prevent instant multi-hits
+
+                        // Visual Feedback (Damage)
+                        createParticles(c.pos.x, c.pos.y, '#8d6e63', 15 * c.scale, 10);
+
+                        // Knockback
+                        let bounce = c.pos.sub(player.pos).normalize().mult(50 * player.scale);
+                        c.pos = c.pos.add(bounce);
+
+                        if (c.hitsTaken < 3) {
+                            return; // Not dead yet
+                        }
+                    }
+
+                    c.isDead = true;
+
+                    let idx = creeps.indexOf(c);
+                    if (idx !== -1) {
+                        creeps.splice(idx, 1);
+
+                        // --- Shattering Effect (Body Parts) ---
+                        if (typeof c.shatter === 'function') {
+                            const parts = c.shatter();
+                            parts.forEach(p => {
+                                particles.push(new BodyPart(p.x, p.y, p.part, p.type, p.scale, p.vel, p.props));
+                            });
+                        } else if (c.headPos && c.colors && c.colors.head) {
+                            createParticles(c.pos.x, c.pos.y, c.colors.head || '#00aa00', (c.size || 5), 8);
+                        } else {
+                            createParticles(c.pos.x, c.pos.y, c.color || '#00aa00', (c.size || 5), 8);
+                        }
+                    }
+
+                    // XP Calculation
+                    let stagePower = c.evolutionStage !== undefined ? Math.pow(1.5, c.evolutionStage) : 0;
+                    let xpGain = c.isRival ? Math.floor(20 * stagePower) : (1 + Math.floor(c.size * (c.scale || 1)));
+                    player.gainXp(xpGain);
+
+                    // --- TITAN QUEST TRACKING ---
+                    if (player.titanQuest && player.titanQuest.active && !player.titanQuest.complete) {
+                        if (c.evolutionStage === 12) player.titanQuest.scorpions++;
+                        else if (c.evolutionStage === 11) player.titanQuest.centipedes++;
+                        else if (c.evolutionStage === 10) player.titanQuest.tarantulas++;
+
+                        // Check Completion
+                        if (player.titanQuest.scorpions >= player.titanQuest.reqScorpions &&
+                            player.titanQuest.centipedes >= player.titanQuest.reqCentipedes &&
+                            player.titanQuest.tarantulas >= player.titanQuest.reqTarantulas) {
+                            player.titanQuest.complete = true;
+                            // TRIGGER EVOLUTION
+                            setTimeout(() => {
+                                createParticles(player.pos.x, player.pos.y, '#ff3d00', 50 * player.scale, 50); // Big explosion
+                                player.evolve();
+                            }, 500);
+                        }
+                    }
+                };
+
+                // Attempt to start predation animation
+                let consumed = false;
+
+                // 1. Try standard animation trigger
+                if (player.startPredation(c, (pos) => {
+                    consumeCreep(c); // Callback
+                })) {
+                    consumed = true;
+                }
+                // 2. If blocked (e.g. already attacking), but is a Lethal Attacker (Tarantula/Mantis/Weta doing AoE)
+                else if (player.predationState === 'attacking') {
+                    // Check if form supports "Ramming/Active" kill
+                    if (['TARANTULA', 'MANTIS', 'SCORPION', 'GIANT_WETA', 'RHINO_BEETLE'].includes(player.form)) {
+                        // Fix: Don't ram the intended target! Let the animation kill it.
+                        if (c === player.targetCreep) {
+                            // Do nothing to target (it is locked)
+                        } else {
+                            // For others, contact during attack = death
+                            consumeCreep(c);
+                            consumed = true;
+                        }
                     }
                 }
-            };
 
-            // Attempt to start predation animation
-            let consumed = false;
-
-            // 1. Try standard animation trigger
-            if (player.startPredation(c, (pos) => {
-                consumeCreep(c); // Callback
-            })) {
-                consumed = true;
-            }
-            // 2. If blocked (e.g. already attacking), but is a Lethal Attacker (Tarantula/Mantis/Weta doing AoE)
-            else if (player.predationState === 'attacking') {
-                // Check if form supports "Ramming/Active" kill
-                if (['TARANTULA', 'MANTIS', 'SCORPION', 'GIANT_WETA', 'RHINO_BEETLE'].includes(player.form)) {
-                    // Fix: Don't ram the intended target! Let the animation kill it.
-                    if (c === player.targetCreep) {
-                        // Do nothing to target (it is locked)
-                    } else {
-                        // For others, contact during attack = death
-                        consumeCreep(c);
-                        consumed = true;
-                    }
+                if (consumed) {
+                    continue;
                 }
-            }
+            } // End if (collision)
+        } // End for (creeps)
 
-            if (consumed) {
-                continue;
+        // Update Texts & Particles & Corpses
+        for (let i = corpses.length - 1; i >= 0; i--) {
+            let c = corpses[i];
+            c.corpseTimer--;
+            if (c.corpseTimer <= 0) {
+                corpses.splice(i, 1);
             }
-        } // End if (collision)
-    } // End for (creeps)
-
-    // Update Texts & Particles & Corpses
-    for (let i = corpses.length - 1; i >= 0; i--) {
-        let c = corpses[i];
-        c.corpseTimer--;
-        if (c.corpseTimer <= 0) {
-            corpses.splice(i, 1);
         }
-    }
-    for (let i = texts.length - 1; i >= 0; i--) {
-        texts[i].update();
-        if (texts[i].life <= 0) texts.splice(i, 1);
-    }
-    for (let i = particles.length - 1; i >= 0; i--) {
-        particles[i].update();
-        if (particles[i].life <= 0) particles.splice(i, 1);
-    }
-    for (let i = ripples.length - 1; i >= 0; i--) {
-        ripples[i].update(0.016);
-        if (ripples[i].life <= 0) ripples.splice(i, 1);
-    }
-
-    // Titan Particle Logic
-    if (player.form === 'TITAN' && player.vel.mag() > 50 * player.scale) {
-        if (particles.length < 100) {
-            particles.push(new Particle(
-                player.pos.x + (Math.random() - 0.5) * 300 * player.scale,
-                player.pos.y + (Math.random() - 0.5) * 300 * player.scale,
-                '#ff3d00', // Titan dust color
-                Math.random() * 5 * player.scale // size
-            ));
-            // Override velocity in particle specific handling? 
-            // Existing Particle class is simple. Let's rely on default behavior or tweak.
-            // Reference: vx = -vel.x * 0.05
-            let p = particles[particles.length - 1];
-            p.vel.x = -player.vel.x * 0.05;
-            p.vel.y = -player.vel.y * 0.05;
+        for (let i = texts.length - 1; i >= 0; i--) {
+            texts[i].update();
+            if (texts[i].life <= 0) texts.splice(i, 1);
         }
-    }
+        for (let i = particles.length - 1; i >= 0; i--) {
+            particles[i].update();
+            if (particles[i].life <= 0) particles.splice(i, 1);
+        }
+        for (let i = ripples.length - 1; i >= 0; i--) {
+            ripples[i].update(0.016);
+            if (ripples[i].life <= 0) ripples.splice(i, 1);
+        }
 
-    cameraShake = Math.max(0, cameraShake - 0.5);
+        // Titan Particle Logic
+        if (player.form === 'TITAN' && player.vel.mag() > 50 * player.scale) {
+            if (particles.length < 100) {
+                particles.push(new Particle(
+                    player.pos.x + (Math.random() - 0.5) * 300 * player.scale,
+                    player.pos.y + (Math.random() - 0.5) * 300 * player.scale,
+                    '#ff3d00', // Titan dust color
+                    Math.random() * 5 * player.scale // size
+                ));
+                // Override velocity in particle specific handling? 
+                // Existing Particle class is simple. Let's rely on default behavior or tweak.
+                // Reference: vx = -vel.x * 0.05
+                let p = particles[particles.length - 1];
+                p.vel.x = -player.vel.x * 0.05;
+                p.vel.y = -player.vel.y * 0.05;
+            }
+        }
 
-
-    let targetCamX = player.pos.x - width / 2;
-    let targetCamY = player.pos.y - height / 2;
-    camera.x += (targetCamX - camera.x) * 0.1;
-    camera.y += (targetCamY - camera.y) * 0.1;
-
-    // --- Dynamic Zoom ---
-    // Maintain Player Size below 20% of screen min dimension
-    // Visual Radius approx = scale * 50 (based on rough rendering sizes)
-    // Target: (scale * 50 * zoom) < (minDim * 0.20)
-    // => zoom < (minDim * 0.20) / (scale * 50)
-
-    let minDimension = Math.min(width, height);
-    let baseRadius = 60;
-    if (player.form === 'COCKROACH') baseRadius = 140; // Legs + Antennae
-    // FIX: Spider legs are long, but if we account for full leg span (300), the camera zooms out too far (0.3).
-    // We want Zoom ~1.0 for the New World. So treating it closer to standard size (e.g. 100-120) makes sense.
-    // This lets legs clip off screen edges slightly but keeps the "Main Character" feel.
-    if (player.form === 'SPIDER') baseRadius = 120;
-    if (player.form === 'MANTIS') baseRadius = 130;
-    if (player.form === 'CRICKET') baseRadius = 140;
-    if (player.form === 'STICK_INSECT') baseRadius = 150;
-    if (player.form === 'TARANTULA') baseRadius = 130;
-    if (player.form === 'RHINO_BEETLE') baseRadius = 160;
-    if (player.form === 'GIANT_WETA') baseRadius = 240; // Force zoom out
-    if (player.form === 'CENTIPEDE') baseRadius = 220;
-    if (player.form === 'SCORPION') baseRadius = 180;
-    if (player.form === 'TITAN') baseRadius = 450;
-
-    let visualSize = player.scale * baseRadius;
-    let desiredZoom = (minDimension * 0.15) / visualSize;
-
-    // 3. Normal Zoom Logic
+        cameraShake = Math.max(0, cameraShake - 0.5);
 
 
+        let targetCamX = player.pos.x - width / 2;
+        let targetCamY = player.pos.y - height / 2;
+        camera.x += (targetCamX - camera.x) * 0.1;
+        camera.y += (targetCamY - camera.y) * 0.1;
+
+        // --- Dynamic Zoom ---
+        // Maintain Player Size below 20% of screen min dimension
+        // Visual Radius approx = scale * 50 (based on rough rendering sizes)
+        // Target: (scale * 50 * zoom) < (minDim * 0.20)
+        // => zoom < (minDim * 0.20) / (scale * 50)
+
+        let minDimension = Math.min(width, height);
+        let baseRadius = 60;
+        if (player.form === 'COCKROACH') baseRadius = 140; // Legs + Antennae
+        // FIX: Spider legs are long, but if we account for full leg span (300), the camera zooms out too far (0.3).
+        // We want Zoom ~1.0 for the New World. So treating it closer to standard size (e.g. 100-120) makes sense.
+        // This lets legs clip off screen edges slightly but keeps the "Main Character" feel.
+        if (player.form === 'SPIDER') baseRadius = 120;
+        if (player.form === 'MANTIS') baseRadius = 130;
+        if (player.form === 'CRICKET') baseRadius = 140;
+        if (player.form === 'STICK_INSECT') baseRadius = 150;
+        if (player.form === 'TARANTULA') baseRadius = 130;
+        if (player.form === 'RHINO_BEETLE') baseRadius = 160;
+        if (player.form === 'GIANT_WETA') baseRadius = 240; // Force zoom out
+        if (player.form === 'CENTIPEDE') baseRadius = 220;
+        if (player.form === 'SCORPION') baseRadius = 180;
+        if (player.form === 'TITAN') baseRadius = 450;
+
+        let visualSize = player.scale * baseRadius;
+        let desiredZoom = (minDimension * 0.15) / visualSize;
+
+        // 3. Normal Zoom Logic
 
 
-    // 3. Normal Zoom Logic
-    // Allow zooming down to 0.05 (Limit)
-    let autoTargetZoom = Math.max(0.05, Math.min(1.0, desiredZoom));
-
-    // Smooth Zoom
-    if (!window.gameScale) window.gameScale = 1.0;
-    window.gameScale += (autoTargetZoom - window.gameScale) * 0.1;
 
 
-    ctx.fillStyle = '#e6dcc3';
-    ctx.fillRect(0, 0, width, height);
+        // 3. Normal Zoom Logic
+        // Allow zooming down to 0.05 (Limit)
+        let autoTargetZoom = Math.max(0.05, Math.min(1.0, desiredZoom));
 
-    ctx.save();
-    // Center Screen
-    ctx.translate(width / 2, height / 2);
-    // Draw World normally at gameScale
-    ctx.scale(window.gameScale, window.gameScale);
-    ctx.translate(-width / 2, -height / 2);
-    // Camera
-    ctx.translate(-camera.x, -camera.y);
+        // Smooth Zoom
+        if (!window.gameScale) window.gameScale = 1.0;
+        window.gameScale += (autoTargetZoom - window.gameScale) * 0.1;
 
-    if (cameraShake > 0) {
-        ctx.translate((Math.random() - 0.5) * cameraShake, (Math.random() - 0.5) * cameraShake);
-    }
 
-    // Environment: No scale trickery needed. Just draw.
-    // Use worldTier to scale texture density if we want? 
+        ctx.fillStyle = '#e6dcc3';
+        ctx.fillRect(0, 0, width, height);
 
-    // Draw Ripples (Under environment or on top?) Reference draws ripples AFTER background but BEFORE insect.
-    ripples.forEach(r => r.draw(ctx));
-
-    // Actually, since player shrunk, the existing grid (500px) NOW looks huge (rel to player).
-    // So we don't need to change environment drawing AT ALL.
-    // The "Giant Grid" effect happens naturally because the player is tiny!
-    // Pass currentTier to draw function
-    env.draw(ctx, camera, width, height, window.gameScale, currentTier);
-
-    // Draw Corpses (Fade out)
-    corpses.forEach(c => {
         ctx.save();
-        let alpha = Math.max(0, c.corpseTimer / c.maxCorpseTimer);
-        ctx.globalAlpha = alpha;
-        // Draw without Health Bar or Debug
-        // We call drawInternal directly if possible, or just draw and rely on isDead/Player checks to skip logic
-        // But draw() calls drawDebugHitboxes which we might not want.
-        // Actually debugging outlines on corpses might be annoying.
-        // But Insect.js draw() calls drawInternal + drawDebugHitboxes.
-        // We can just rely on alpha to fade it all.
-        c.draw(ctx);
+        // Center Screen
+        ctx.translate(width / 2, height / 2);
+        // Draw World normally at gameScale
+        ctx.scale(window.gameScale, window.gameScale);
+        ctx.translate(-width / 2, -height / 2);
+        // Camera
+        ctx.translate(-camera.x, -camera.y);
+
+        if (cameraShake > 0) {
+            ctx.translate((Math.random() - 0.5) * cameraShake, (Math.random() - 0.5) * cameraShake);
+        }
+
+        // Environment: No scale trickery needed. Just draw.
+        // Use worldTier to scale texture density if we want? 
+
+        // Draw Ripples (Under environment or on top?) Reference draws ripples AFTER background but BEFORE insect.
+        ripples.forEach(r => r.draw(ctx));
+
+        // Actually, since player shrunk, the existing grid (500px) NOW looks huge (rel to player).
+        // So we don't need to change environment drawing AT ALL.
+        // The "Giant Grid" effect happens naturally because the player is tiny!
+        // Pass currentTier to draw function
+        env.draw(ctx, camera, width, height, window.gameScale, currentTier);
+
+        // Draw Corpses (Fade out)
+        corpses.forEach(c => {
+            ctx.save();
+            let alpha = Math.max(0, c.corpseTimer / c.maxCorpseTimer);
+            ctx.globalAlpha = alpha;
+            // Draw without Health Bar or Debug
+            // We call drawInternal directly if possible, or just draw and rely on isDead/Player checks to skip logic
+            // But draw() calls drawDebugHitboxes which we might not want.
+            // Actually debugging outlines on corpses might be annoying.
+            // But Insect.js draw() calls drawInternal + drawDebugHitboxes.
+            // We can just rely on alpha to fade it all.
+            c.draw(ctx);
+            ctx.restore();
+        });
+
+        // Draw Creeps
+        creeps.forEach(c => c.draw(ctx));
+
+        // Draw Particles (Residue/Debris) - BEFORE Player to prevent covering
+        particles.forEach(p => p.draw(ctx));
+
+        // Draw Player (On Top)
+        player.draw(ctx);
+
+        // Draw Texts
+        texts.forEach(t => t.draw(ctx));
+
         ctx.restore();
-    });
-
-    // Draw Creeps
-    creeps.forEach(c => c.draw(ctx));
-
-    // Draw Particles (Residue/Debris) - BEFORE Player to prevent covering
-    particles.forEach(p => p.draw(ctx));
-
-    // Draw Player (On Top)
-    player.draw(ctx);
-
-    // Draw Texts
-    texts.forEach(t => t.draw(ctx));
-
-    ctx.restore();
 
 
-    ctx.restore();
+        ctx.restore();
 
 
-    requestAnimationFrame(gameLoop);
+    } catch (err) {
+        console.error("Game Loop Crashed:", err);
+        logState("CRASH: " + err);
+    }
+    gameLoopId = requestAnimationFrame(gameLoop);
 }
+
 
 gameLoop();
