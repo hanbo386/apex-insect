@@ -7,6 +7,7 @@ export class Environment {
         this.groundCanvas = document.createElement('canvas');
         this.groundCtx = this.groundCanvas.getContext('2d');
         this.initGround();
+        this.initCache();
     }
 
     initGround() {
@@ -39,6 +40,151 @@ export class Environment {
         }
 
         this.bgPattern = null;
+    }
+
+    initCache() {
+        // --- LEAF CACHE ---
+        this.leafCache = [];
+        const leafColors = ['#8a7b66', '#a39276', '#6b5c4a', '#7d8a63', '#9e5a3e'];
+        // Generate variations per color (Detailed vs Simple shape)
+        leafColors.forEach(color => {
+            // Variation 1: Lanceolate
+            this.leafCache.push(this.createLeafSprite(color, 0));
+            // Variation 2: Maple/Oak
+            this.leafCache.push(this.createLeafSprite(color, 1));
+        });
+
+        // --- STONE CACHE ---
+        this.stoneCache = [];
+        // Generate 10 random pre-rendered stones
+        for (let i = 0; i < 10; i++) {
+            this.stoneCache.push(this.createStoneSprite(i));
+        }
+
+        // --- MUSHROOM CACHE ---
+        this.mushroomCache = [];
+        // 2 Types: Red and Brown
+        this.mushroomCache.push(this.createMushroomSprite('#d44'));
+        this.mushroomCache.push(this.createMushroomSprite('#8b4513'));
+    }
+
+    createLeafSprite(color, type) {
+        const size = 64; // Max size for cache
+        const cvs = document.createElement('canvas');
+        cvs.width = size * 2;
+        cvs.height = size * 2;
+        const ctx = cvs.getContext('2d');
+        const r = size * 0.8;
+
+        ctx.translate(size, size);
+        ctx.fillStyle = color;
+        ctx.beginPath();
+
+        if (type === 0) {
+            // Lanceolate
+            ctx.moveTo(0, -r);
+            ctx.quadraticCurveTo(r * 0.6, -r * 0.5, r * 0.4, 0);
+            ctx.quadraticCurveTo(r * 0.4, r * 0.5, 0, r);
+            ctx.quadraticCurveTo(-r * 0.4, r * 0.5, -r * 0.4, 0);
+            ctx.quadraticCurveTo(-r * 0.6, -r * 0.5, 0, -r);
+        } else {
+            // Maple/Oak
+            ctx.moveTo(0, -r);
+            ctx.quadraticCurveTo(r * 0.2, -r * 0.6, r * 0.5, -r * 0.5);
+            ctx.quadraticCurveTo(r * 0.3, -r * 0.2, r * 0.1, -r * 0.1);
+            ctx.quadraticCurveTo(r * 0.6, 0, r * 0.8, r * 0.2);
+            ctx.quadraticCurveTo(r * 0.4, r * 0.4, r * 0.1, r * 0.3);
+            ctx.quadraticCurveTo(r * 0.3, r * 0.7, 0, r);
+            ctx.quadraticCurveTo(-r * 0.3, r * 0.7, -r * 0.1, r * 0.3);
+            ctx.quadraticCurveTo(-r * 0.4, r * 0.4, -r * 0.8, r * 0.2);
+            ctx.quadraticCurveTo(-r * 0.6, 0, -r * 0.1, -r * 0.1);
+            ctx.quadraticCurveTo(-r * 0.3, -r * 0.2, -r * 0.5, -r * 0.5);
+            ctx.quadraticCurveTo(-r * 0.2, -r * 0.6, 0, -r);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        // Vein
+        ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 0.8);
+        ctx.lineTo(0, r * 0.8);
+        ctx.stroke();
+
+        return cvs;
+    }
+
+    createStoneSprite(seed) {
+        const size = 80;
+        const cvs = document.createElement('canvas');
+        cvs.width = size * 2;
+        cvs.height = size * 2;
+        const ctx = cvs.getContext('2d');
+        const r = size * 0.8;
+
+        ctx.translate(size, size);
+        let grayVal = Math.floor(100 + (seed % 3) * 30);
+        ctx.fillStyle = `rgb(${grayVal}, ${grayVal}, ${grayVal})`;
+        ctx.strokeStyle = `rgb(${grayVal - 30}, ${grayVal - 30}, ${grayVal - 30})`;
+        ctx.lineWidth = 3;
+
+        ctx.beginPath();
+        let points = 7 + (seed % 5);
+        for (let i = 0; i < points; i++) {
+            let angle = (i / points) * Math.PI * 2;
+            let rMod = r * (0.8 + Math.abs(Math.sin(angle * 3 + seed)) * 0.2);
+            let rx = Math.cos(angle) * rMod;
+            let ry = Math.sin(angle) * rMod;
+            if (i === 0) ctx.moveTo(rx, ry);
+            else ctx.lineTo(rx, ry);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Cracks
+        ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.4, -r * 0.2);
+        ctx.lineTo(r * 0.2, r * 0.3);
+        ctx.lineTo(r * 0.5, r * 0.1);
+        ctx.stroke();
+
+        return cvs;
+    }
+
+    createMushroomSprite(color) {
+        const size = 60;
+        const cvs = document.createElement('canvas');
+        cvs.width = size * 2;
+        cvs.height = size * 2;
+        const ctx = cvs.getContext('2d');
+        const r = size * 0.8;
+
+        ctx.translate(size, size);
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Dots
+        ctx.fillStyle = '#fff';
+        let seed = 5;
+        let dotCount = 5;
+        for (let d = 0; d < dotCount; d++) {
+            let dAngle = (d / dotCount) * Math.PI * 2;
+            let dDist = r * 0.5;
+            let dSize = 4;
+            ctx.beginPath();
+            ctx.arc(Math.cos(dAngle) * dDist, Math.sin(dAngle) * dDist, dSize, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        return cvs;
     }
 
     draw(ctx, camera, width, height, scale = 1.0, tier = 1) {
@@ -356,194 +502,106 @@ export class Environment {
                 }
             }
 
-            // 2. Stones (Irregular Shapes)
+            // 2. Stones (Cached)
             if ((seed * 10) % 1 < 0.02) {
                 let sx = baseX + ((seed * 555) % 1) * gridSize;
                 let sy = baseY + ((seed * 777) % 1) * gridSize;
                 let sSize = (30 + (seed % 1) * 40); // 30-70 radius
 
+                let cacheIdx = Math.floor((seed * 100) % this.stoneCache.length);
+                let sprite = this.stoneCache[cacheIdx];
+
+                // Sprite Base Size is 160 (2x80). We want drawn size approx sSize*2.
+                // Scale factor: sSize / 80
+                let drawScale = sSize / 80.0;
+
                 ctx.save();
                 ctx.translate(sx, sy);
-
-                // Varied Grey Color
-                let grayVal = Math.floor(100 + (seed % 1) * 60);
-                ctx.fillStyle = `rgb(${grayVal}, ${grayVal}, ${grayVal})`;
-                ctx.strokeStyle = `rgb(${grayVal - 30}, ${grayVal - 30}, ${grayVal - 30})`;
-                ctx.lineWidth = 3;
-
-                ctx.beginPath();
-                // Irregular jagged polygon
-                let points = 7 + Math.floor((seed * 100) % 5); // 7-11 points
-                for (let i = 0; i < points; i++) {
-                    let angle = (i / points) * Math.PI * 2;
-                    // Vary radius by +/- 20%
-                    let rMod = sSize * (0.8 + Math.abs(Math.sin(angle * 3 + seed * 10)) * 0.4);
-                    let rx = Math.cos(angle) * rMod;
-                    let ry = Math.sin(angle) * rMod;
-                    if (i === 0) ctx.moveTo(rx, ry);
-                    else ctx.lineTo(rx, ry);
-                }
-                ctx.closePath();
-                ctx.fill();
-                ctx.stroke();
-
-                // Internal Cracks / Details
-                ctx.strokeStyle = 'rgba(0,0,0,0.2)';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(-sSize * 0.4, -sSize * 0.2);
-                ctx.lineTo(sSize * 0.2, sSize * 0.3);
-                ctx.lineTo(sSize * 0.5, sSize * 0.1);
-                ctx.stroke();
-
+                ctx.scale(drawScale, drawScale);
+                ctx.drawImage(sprite, -80, -80);
                 ctx.restore();
                 return;
             }
 
-            // 3. Mushrooms (Top-Down View)
+            // 3. Mushrooms (Cached)
             else if ((seed * 20) % 1 < 0.015) {
                 let mx = baseX + ((seed * 888) % 1) * gridSize;
                 let my = baseY + ((seed * 999) % 1) * gridSize;
                 let mSize = 35 + ((seed * 100) % 1) * 20;
 
+                let cacheIdx = ((seed * 10) % 1 > 0.5) ? 1 : 0; // Brown or Red
+                let sprite = this.mushroomCache[cacheIdx];
+
+                // Sprite Base Scale: 60 radius (120px)
+                let drawScale = mSize / 60.0;
+                let mRot = (seed * 500) % (Math.PI * 2);
+
                 ctx.save();
                 ctx.translate(mx, my);
-
-                // Rotate randomly
-                let mRot = (seed * 500) % (Math.PI * 2);
                 ctx.rotate(mRot);
-
-                // Cap (perfect circle or slight ellipse)
-                ctx.fillStyle = '#d44'; // Red Cap
-                if ((seed * 10) % 1 > 0.5) ctx.fillStyle = '#8b4513'; // Brown Cap variant
-
-                ctx.beginPath();
-                ctx.arc(0, 0, mSize, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Shadow/Rim
-                ctx.strokeStyle = 'rgba(0,0,0,0.2)';
-                ctx.lineWidth = 3;
-                ctx.stroke();
-
-                // Dots (Top Down) - If Red
-                if (ctx.fillStyle === '#d44' || true) { // Always draw dots for texture
-                    ctx.fillStyle = '#fff';
-                    // Random dots
-                    let dotCount = 3 + Math.floor((seed * 50) % 5);
-                    for (let d = 0; d < dotCount; d++) {
-                        let dAngle = (d / dotCount) * Math.PI * 2 + seed;
-                        let dDist = mSize * (0.3 + ((seed * d * 10) % 1) * 0.4); // 30-70% out
-                        let dSize = 3 + ((seed * d * 5) % 1) * 3;
-
-                        ctx.beginPath();
-                        ctx.arc(Math.cos(dAngle) * dDist, Math.sin(dAngle) * dDist, dSize, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                }
-
+                ctx.scale(drawScale, drawScale);
+                ctx.drawImage(sprite, -60, -60);
                 ctx.restore();
                 return;
             }
         }
 
         let count = Math.floor((seed - Math.floor(seed)) * 2); // Reduced density (Halved)
-
-
-        // Scale decoration size by gridMult
         let scaleFactor = gridSize / 500;
 
         for (let k = 0; k < count; k++) {
             let localSeed = Math.abs(Math.sin(baseX + k * 132.1) * 43758.5453);
 
             // Jittered Position
-            // Include 'k' in the randomization to ensure multiple leaves in same cell don't align
             let x = baseX + ((localSeed * 123.45 + k * 17.17) % 1) * gridSize;
             let y = baseY + ((localSeed * 678.90 + k * 31.31) % 1) * gridSize;
 
             let rot = (localSeed * 100) % (Math.PI * 2);
 
-            // Objects grow with the grid!
-            // Size Variance: 
-            // Base: 15-40
+            // Size
             let size = (15 + (localSeed % 1) * 25);
-            // Giant Chance (10%): Multiplier 5x-8x
-            if ((localSeed * 10) % 1 < 0.1) {
+            if ((localSeed * 10) % 1 < 0.1) { // Giant
                 size *= (5 + (localSeed * 100) % 1 * 3);
-
-                // Re-randomize position & Rotation for GIANTS
+                // Re-randomize giant pos
                 let giantSeed = Math.abs(Math.sin(baseX * 99.99 + k * 88.88) * 54321.123);
                 x = baseX + ((giantSeed * 444.44) % 1) * gridSize;
                 y = baseY + ((giantSeed * 555.55) % 1) * gridSize;
-
-                // Unique rotation for giants
                 rot = (giantSeed * 777) % (Math.PI * 2);
             }
             size *= scaleFactor;
 
-            // LOD Check: If projected size is too small, skip
             if (size * scale < pixelThreshold) continue;
 
-            // Leaf Colors (Autumn/Dry themes)
+            // CACHED LEAF DRAWING
+            // Color variant index
             let colorVariance = localSeed % 1;
-            let color = '#8a7b66'; // Default brown
-            if (colorVariance > 0.7) color = '#a39276'; // Light brown
-            else if (colorVariance > 0.4) color = '#6b5c4a'; // Darker brown
-            else if (colorVariance > 0.2) color = '#7d8a63'; // Faded green
-            else color = '#9e5a3e'; // Reddish/Orange leaf
+            let colorIdx = 0;
+            if (colorVariance > 0.7) colorIdx = 1; // Light brown
+            else if (colorVariance > 0.4) colorIdx = 2; // Darker brown
+            else if (colorVariance > 0.2) colorIdx = 3; // Faded green
+            else colorIdx = 4; // Reddish
+
+            // Shape variant (0 or 1)
+            let shapeType = (localSeed % 1 > 0.5) ? 0 : 1;
+
+            // Map to cache array index
+            // colorIdx * 2 + shapeType
+            // Cache is [Color0_Type0, Color0_Type1, Color1_Type0...]
+            let cacheIndex = (colorIdx * 2) + shapeType;
+            if (cacheIndex >= this.leafCache.length) cacheIndex = 0;
+
+            let sprite = this.leafCache[cacheIndex];
+
+            // Sprite is 128x128 (64 radius)
+            // Desired 'size' is approx radius.
+            let drawScale = (size * 1.2) / 64.0; // 1.2 tweak to match original visual size
 
             ctx.save();
             ctx.translate(x, y);
             ctx.rotate(rot);
-            ctx.fillStyle = color;
-            ctx.beginPath();
-
-            // Draw diverse leaf shapes based on seed
-            if (localSeed % 1 > 0.5) {
-                // Organic Lanceolate Leaf (Elliptical but tapered tips)
-                ctx.moveTo(0, -size);
-                // Right Curve
-                ctx.quadraticCurveTo(size * 0.6, -size * 0.5, size * 0.4, 0);
-                ctx.quadraticCurveTo(size * 0.4, size * 0.5, 0, size);
-                // Left Curve (Mirrored)
-                ctx.quadraticCurveTo(-size * 0.4, size * 0.5, -size * 0.4, 0);
-                ctx.quadraticCurveTo(-size * 0.6, -size * 0.5, 0, -size);
-            } else {
-                // Organic Maple/Oak Leaf
-                ctx.moveTo(0, -size);
-
-                // Top Right Lobe
-                ctx.quadraticCurveTo(size * 0.2, -size * 0.6, size * 0.5, -size * 0.5);
-                ctx.quadraticCurveTo(size * 0.3, -size * 0.2, size * 0.1, -size * 0.1);
-                // Mid Right Lobe
-                ctx.quadraticCurveTo(size * 0.6, 0, size * 0.8, size * 0.2);
-                ctx.quadraticCurveTo(size * 0.4, size * 0.4, size * 0.1, size * 0.3);
-                // Bottom Right
-                ctx.quadraticCurveTo(size * 0.3, size * 0.7, 0, size); // Stem base
-
-                // Mirror Left Side
-                // Bottom Left
-                ctx.quadraticCurveTo(-size * 0.3, size * 0.7, -size * 0.1, size * 0.3);
-                // Mid Left Lobe
-                ctx.quadraticCurveTo(-size * 0.4, size * 0.4, -size * 0.8, size * 0.2);
-                ctx.quadraticCurveTo(-size * 0.6, 0, -size * 0.1, -size * 0.1);
-                // Top Left Lobe
-                ctx.quadraticCurveTo(-size * 0.3, -size * 0.2, -size * 0.5, -size * 0.5);
-                ctx.quadraticCurveTo(-size * 0.2, -size * 0.6, 0, -size);
-
-                ctx.closePath();
-            }
-
-            ctx.fill();
-
-            // Vein (simple line)
-            ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-            ctx.lineWidth = 2 * scaleFactor;
-            ctx.beginPath();
-            ctx.moveTo(0, -size * 0.8);
-            ctx.lineTo(0, size * 0.8);
-            ctx.stroke();
-
+            ctx.scale(drawScale, drawScale);
+            // Draw centered
+            ctx.drawImage(sprite, -64, -64);
             ctx.restore();
         }
     }

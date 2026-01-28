@@ -334,8 +334,8 @@ export class StickInsectLeg {
                     ctx.beginPath();
                     ctx.strokeStyle = `rgba(255, 250, 200, ${alpha})`;
                     ctx.lineWidth = width;
-                    ctx.shadowBlur = 10 * (1 - ringT);
-                    ctx.shadowColor = "white";
+                    // ctx.shadowBlur = 10 * (1 - ringT); // REMOVED
+                    // ctx.shadowColor = "white";
                     ctx.arc(0, 0, radius, 0, Math.PI * 2);
                     ctx.stroke();
                 }

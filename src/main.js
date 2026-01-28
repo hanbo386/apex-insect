@@ -183,13 +183,20 @@ class EvolutionEgg {
     draw(ctx) {
         const pulse = 1.0 + Math.sin(this.timer) * 0.1;
         ctx.save();
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = '#00ffcc';
-        ctx.fillStyle = '#e0ffff';
-        ctx.beginPath();
-        // Scale with world
+        // Optimized: Removed shadowBlur. Used Gradient instead.
         let s = this.scale || 1.0;
-        ctx.ellipse(this.pos.x, this.pos.y, 8 * s * pulse, 10 * s * pulse, 0, 0, Math.PI * 2);
+        let rx = 8 * s * pulse;
+        let ry = 10 * s * pulse;
+
+        let grad = ctx.createRadialGradient(this.pos.x, this.pos.y, rx * 0.2, this.pos.x, this.pos.y, rx * 1.5);
+        grad.addColorStop(0, '#e0ffff');
+        grad.addColorStop(0.6, '#00ffcc');
+        grad.addColorStop(1, 'rgba(0, 255, 204, 0)');
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        // Draw slightly larger ellipse to account for glow
+        ctx.ellipse(this.pos.x, this.pos.y, rx * 1.5, ry * 1.5, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
     }

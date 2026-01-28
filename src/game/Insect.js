@@ -718,9 +718,11 @@ export class Insect {
     evolve(isInstant = false) {
         this.evolutionStage++;
         this.level = 1; // RESET Level to 1
+
         this.xp = 0;    // Reset XP
 
-        // Structural Evolution Growth
+        // Fix: Reset Predation State to prevent sticky states (like infinite attacking)
+        this.predationState = 'idle';
         // STRICT SIZE UPDATE from Config
         const config = STAGE_CONFIG[this.evolutionStage];
         if (config) {
@@ -1216,6 +1218,12 @@ export class Insect {
             let s = this.scale || 1.0;
             zones.push({ pos: this.pos.add(backDir.mult(25 * s)), radius: 18 * s });
             zones.push({ pos: this.pos.add(backDir.mult(50 * s)), radius: 15 * s });
+        } else if (this.form === 'COCKROACH') {
+            let backDir = new Vec2(Math.cos(this.angle), Math.sin(this.angle)).mult(-1);
+            let s = this.scale || 1.0;
+            // Thorax/Abdomen zones
+            zones.push({ pos: this.pos.add(backDir.mult(15 * s)), radius: 16 * s });
+            zones.push({ pos: this.pos.add(backDir.mult(35 * s)), radius: 14 * s });
         } else if (this.form === 'STICK_INSECT') {
             if (this.stickSegments) {
                 this.stickSegments.forEach(seg => {
@@ -1975,12 +1983,10 @@ export class Insect {
 
     // --- Pill Bug Specific Drawing Logic ---
     drawPillBug(ctx) {
-        // Shadow (unified)
+        // Shadow (unified) - Removed for performance
         ctx.save();
-        ctx.shadowColor = 'rgba(0,0,0,0.4)';
-        ctx.shadowBlur = 12;
-        ctx.shadowBlur = 12;
-        ctx.shadowOffsetX = 5;
+        // ctx.shadowColor = 'rgba(0,0,0,0.4)';
+        // ctx.shadowBlur = 12; // REMOVED
 
         // Draw Particles (Dust)
         if (this.pillBugEffects) {
@@ -2000,13 +2006,10 @@ export class Insect {
             ctx.globalAlpha = 1.0;
         }
 
-        ctx.shadowOffsetY = 5;
-        ctx.shadowOffsetY = 5;
-
         // Draw Legs first (under body)
         this.drawPillBugLegs(ctx);
 
-        ctx.restore(); // Restore shadow settings for body
+        ctx.restore();
 
         // Draw Segments (Tail to Head)
         for (let i = this.pillBugSegments.length - 1; i >= 0; i--) {
@@ -2030,18 +2033,15 @@ export class Insect {
                 ctx.fill();
 
                 // Eyes
-                // Eyes
                 if (this.predationState === 'attacking') {
                     ctx.fillStyle = '#ff3300';
-                    ctx.shadowColor = '#ff3300';
-                    ctx.shadowBlur = 10;
+                    // ctx.shadowBlur = 10; // REMOVED
                 } else {
                     ctx.fillStyle = '#111';
-                    ctx.shadowBlur = 0;
                 }
                 ctx.beginPath(); ctx.arc(10 * this.scale, -radius * 0.6, 2.5 * this.scale, 0, Math.PI * 2); ctx.fill();
                 ctx.beginPath(); ctx.arc(10 * this.scale, radius * 0.6, 2.5 * this.scale, 0, Math.PI * 2); ctx.fill();
-                ctx.shadowBlur = 0;
+
 
                 this.drawPillBugAntennae(ctx, radius);
 
@@ -4420,15 +4420,15 @@ export class Insect {
 
             let eyeFlash = (isAttacking && attackFrames >= SETTINGS.attackWindup && attackFrames < SETTINGS.attackWindup + 10);
             if (eyeFlash) {
-                ctx.shadowBlur = 20;
-                ctx.shadowColor = "#fff";
+                // ctx.shadowBlur = 20; // REMOVED
+                // ctx.shadowColor = "#fff";
                 ctx.fillStyle = "#fff";
             } else {
                 ctx.fillStyle = isAttacking ? '#ff3300' : 'rgba(255,255,255,0.5)';
             }
             ctx.beginPath(); ctx.arc(19 * s, 4 * s, (eyeFlash ? 3.5 : 1.2) * s, 0, Math.PI * 2); ctx.fill();
             ctx.beginPath(); ctx.arc(19 * s, -4 * s, (eyeFlash ? 3.5 : 1.2) * s, 0, Math.PI * 2); ctx.fill();
-            ctx.shadowBlur = 0;
+            // ctx.shadowBlur = 0; // REMOVED
 
             ctx.strokeStyle = '#120c06'; ctx.lineWidth = 6 * s;
             this.palps.forEach(p => {
@@ -5113,13 +5113,24 @@ export class Insect {
             if (this.heldPrey && this.onConsumePrey) {
                 this.onConsumePrey(headPos);
                 this.heldPrey = null;
-                // Reset state after burst?
-                setTimeout(() => { if (this.predationState === 'attacking') this.predationState = 'idle'; }, 300);
+                // Reset state after burst (Timer based now)
+                this.cockroachAttackTimer = 20; // ~300ms at 60fps
             } else {
-                // Manual burst, reset quickly
-                setTimeout(() => { if (this.predationState === 'attacking') this.predationState = 'idle'; }, 300);
+                // Manual burst
+                this.cockroachAttackTimer = 20;
             }
         }
+
+        // Timer Logic replacement for setTimeout
+        if (this.cockroachAttackTimer > 0) {
+            this.cockroachAttackTimer--;
+            if (this.cockroachAttackTimer <= 0) {
+                if (this.predationState === 'attacking') {
+                    this.predationState = 'idle';
+                }
+            }
+        }
+
 
         this.wasAttacking = isAttacking;
 
@@ -5522,11 +5533,34 @@ export class Insect {
         else if (this.form === 'SPIDER' || this.form === 'TARANTULA') {
             parts.push({ x: this.pos.x, y: this.pos.y, type: 'segment', part: { draw: (ctx) => { ctx.beginPath(); ctx.arc(0, 0, 10 * s, 0, Math.PI * 2); ctx.fillStyle = '#111'; ctx.fill(); } }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
             parts.push({ x: this.abdomenPos.x, y: this.abdomenPos.y, type: 'segment', part: { draw: (ctx) => { ctx.beginPath(); ctx.ellipse(0, 0, 15 * s, 12 * s, 0, 0, Math.PI * 2); ctx.fillStyle = '#4a3b2a'; ctx.fill(); } }, scale: s, vel: baseVel(), props: { ...rotProps(), angle: this.angle } });
-            let legs = this.tarantulaLegs || this.spiderLegs;
+
+            // Fix: Check length to avoid selecting empty tarantulaLegs array ([]) for Spider
+            let legs = (this.tarantulaLegs && this.tarantulaLegs.length > 0) ? this.tarantulaLegs : this.spiderLegs;
+
             if (legs) {
                 legs.forEach(leg => {
                     // Calculate exact positions for shattered segments
-                    let shoulder = leg.worldShoulder ? leg.worldShoulder.clone() : this.pos.clone();
+                    // Fix: Use offset calculation if worldShoulder is missing (SpiderLeg standard Leg)
+                    let shoulder;
+                    if (leg.worldShoulder) {
+                        shoulder = leg.worldShoulder.clone();
+                    } else if (leg.offset) { // Standard Leg
+                        shoulder = this.pos.add(leg.offset.rotate(this.angle));
+                    } else {
+                        // Fallback for SpiderLeg custom logic if offset not standard
+                        // SpiderLegs are usually: id, side. Calculate shoulder approx.
+                        // SpiderLeg doesn't store offset, it calculates it.
+                        // Let's re-calc based on SpiderLeg logic: (side * 6 * s, side * y...)
+                        // Simplified fallback: Just use this.pos
+                        shoulder = this.pos.clone();
+                        // Actually, SpiderLeg has 'root' in draw(), but not persistent.
+                        // Let's stick to this.pos or estimate.
+                        // Better: Recalculate based on leg ID roughly.
+                        let side = (leg.side || 1);
+                        let sideDir = new Vec2(Math.sin(this.angle) * -side, Math.cos(this.angle) * side);
+                        shoulder = this.pos.add(sideDir.mult(5 * s));
+                    }
+
                     let foot = leg.currentPos ? leg.currentPos.clone() : this.pos.clone();
                     // Midpoint "Knee/Elbow"
                     let elbow = shoulder.add(foot).mult(0.5);
@@ -5539,18 +5573,21 @@ export class Insect {
                         part: {
                             draw: (ctx) => {
                                 ctx.strokeStyle = '#3e2723';
-                                ctx.lineWidth = 5 * s;
+                                ctx.lineWidth = (this.form === 'TARANTULA' ? 5 : 3) * s;
                                 ctx.lineCap = 'round';
                                 ctx.beginPath(); ctx.moveTo(-10 * s, 0); ctx.lineTo(10 * s, 0); ctx.stroke();
-                                // Dense Fuzz
-                                ctx.strokeStyle = '#2a1a10';
-                                ctx.lineWidth = 0.6 * s;
-                                ctx.beginPath();
-                                for (let k = -10; k <= 10; k += 3) {
-                                    ctx.moveTo(k * s, -2 * s); ctx.lineTo(k * s + (Math.random() - 0.5) * 4 * s, -7 * s);
-                                    ctx.moveTo(k * s, 2 * s); ctx.lineTo(k * s + (Math.random() - 0.5) * 4 * s, 7 * s);
+
+                                // Dense Fuzz (Tarantula Only)
+                                if (this.form === 'TARANTULA') {
+                                    ctx.strokeStyle = '#2a1a10';
+                                    ctx.lineWidth = 0.6 * s;
+                                    ctx.beginPath();
+                                    for (let k = -10; k <= 10; k += 3) {
+                                        ctx.moveTo(k * s, -2 * s); ctx.lineTo(k * s + (Math.random() - 0.5) * 4 * s, -7 * s);
+                                        ctx.moveTo(k * s, 2 * s); ctx.lineTo(k * s + (Math.random() - 0.5) * 4 * s, 7 * s);
+                                    }
+                                    ctx.stroke();
                                 }
-                                ctx.stroke();
                             }
                         },
                         scale: s,
@@ -5566,16 +5603,23 @@ export class Insect {
                         part: {
                             draw: (ctx) => {
                                 ctx.strokeStyle = '#2d1b15';
-                                ctx.lineWidth = 3.5 * s;
+                                ctx.lineWidth = (this.form === 'TARANTULA' ? 3.5 : 2) * s;
                                 ctx.lineCap = 'round';
                                 ctx.beginPath(); ctx.moveTo(-12 * s, 0); ctx.lineTo(12 * s, 0); ctx.stroke();
-                                // Spikes
+
+                                // Spikes (Both can have spikes, but maybe smaller for Spider?)
                                 ctx.strokeStyle = '#150a05';
                                 ctx.lineWidth = 1.0 * s;
                                 ctx.beginPath();
-                                ctx.moveTo(6 * s, 0); ctx.lineTo(9 * s, 6 * s);
-                                ctx.moveTo(-4 * s, 0); ctx.lineTo(-1 * s, 6 * s);
-                                ctx.moveTo(8 * s, 0); ctx.lineTo(11 * s, -5 * s);
+                                if (this.form === 'TARANTULA') {
+                                    ctx.moveTo(6 * s, 0); ctx.lineTo(9 * s, 6 * s);
+                                    ctx.moveTo(-4 * s, 0); ctx.lineTo(-1 * s, 6 * s);
+                                    ctx.moveTo(8 * s, 0); ctx.lineTo(11 * s, -5 * s);
+                                } else {
+                                    // Simpler spikes for spider
+                                    ctx.moveTo(6 * s, 0); ctx.lineTo(8 * s, 4 * s);
+                                    ctx.moveTo(-4 * s, 0); ctx.lineTo(-2 * s, 4 * s);
+                                }
                                 ctx.stroke();
                             }
                         },
