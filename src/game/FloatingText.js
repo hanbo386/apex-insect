@@ -1,19 +1,26 @@
 import { Vec2 } from './Vec2.js';
 
 export class FloatingText {
-    constructor(x, y, text, color = '#ff0000', size = 20, duration = 1.0) {
+    constructor(x, y, text, color = '#ff0000', size = 20, duration = 1.0, velocity = new Vec2(0, -2)) {
         this.pos = new Vec2(x, y);
         this.text = text;
         this.color = color;
         this.size = size;
         this.startTime = Date.now();
         this.duration = duration * 1000; // to ms
-        this.vel = new Vec2(0, -2); // Floats up
+        this.vel = velocity;
     }
 
     update() {
         let elapsed = Date.now() - this.startTime;
-        this.life = 1.0 - (elapsed / this.duration);
+        // Hold for 70%, fade in last 30%
+        let fadeStart = this.duration * 0.7;
+        if (elapsed < fadeStart) {
+            this.life = 1.0;
+        } else {
+            this.life = 1.0 - ((elapsed - fadeStart) / (this.duration - fadeStart));
+        }
+
         this.pos = this.pos.add(this.vel);
     }
 

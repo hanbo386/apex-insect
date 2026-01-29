@@ -800,12 +800,12 @@ export class Insect {
                 leg.targetPos = leg.currentPos.clone();
             });
 
-            formName = "蚂蚁 (ANT)";
+            formName = "蚂蚁";
 
         } else if (this.evolutionStage === 2) {
             this.form = 'LADYBUG';
             this.maxSpeed *= 1.2;
-            formName = "瓢虫 (LADYBUG)";
+            formName = "瓢虫";
         } else if (this.evolutionStage === 3) {
             this.form = 'PILLBUG';
             this.maxSpeed *= 1.1;
@@ -819,7 +819,7 @@ export class Insect {
             for (let i = 0; i < 9; i++) {
                 this.pillBugSegments.push({ x: this.pos.x, y: this.pos.y, angle: this.angle });
             }
-            formName = "潮虫 (PILLBUG)";
+            formName = "潮虫";
             this.legs = []; // Pillbug has custom leg drawing
 
         } else if (this.evolutionStage === 4) {
@@ -828,7 +828,7 @@ export class Insect {
 
             this.initLegs();
 
-            formName = "蟑螂 (COCKROACH)";
+            formName = "蟑螂";
         } else if (this.evolutionStage === 5) {
             this.form = 'SPIDER';
             this.maxSpeed *= 1.2; // Fast
@@ -850,7 +850,7 @@ export class Insect {
                 this.spiderLegs.push(new SpiderLeg(this, i, 1, this.scale));
             }
 
-            formName = "细脚长腿蛛 (SPIDER)";
+            formName = "蜘蛛";
         } else if (this.evolutionStage === 6) {
             this.form = 'MANTIS';
             this.maxSpeed *= 1.25;
@@ -865,40 +865,40 @@ export class Insect {
 
             this.initLegs();
 
-            formName = "螳螂 (MANTIS)";
+            formName = "螳螂";
         } else if (this.evolutionStage === 7) {
             this.form = 'CRICKET';
             this.maxSpeed *= 1.2;
 
             this.initLegs();
-            formName = "蟋蟀 (CRICKET)";
+            formName = "蟋蟀";
         } else if (this.evolutionStage === 8) {
             this.form = 'GIANT_WETA';
             this.maxSpeed *= 1.25; // More agile
             this.initLegs();
-            formName = "大沙螽 (GIANT WETA)";
+            formName = "大沙螽";
         } else if (this.evolutionStage === 9) {
             this.form = 'STICK_INSECT';
             this.maxSpeed *= 1.1;
             this.initLegs();
-            formName = "竹节虫 (STICK INSECT)";
+            formName = "竹节虫";
         } else if (this.evolutionStage === 10) {
             this.form = 'TARANTULA';
             this.maxSpeed *= 1.1; // Faster?
             this.initLegs();
-            formName = "狼蛛 (TARANTULA)";
+            formName = "狼蛛";
         } else if (this.evolutionStage === 11) {
             this.form = 'CENTIPEDE';
             this.initLegs();
-            formName = "巨型蜈蚣 (CENTIPEDE)";
+            formName = "巨型蜈蚣";
         } else if (this.evolutionStage === 12) {
             this.form = 'SCORPION';
             this.initLegs();
-            formName = "巨型毒蝎 (SCORPION)";
+            formName = "巨型毒蝎";
         } else if (this.evolutionStage === 13) {
             this.form = 'TITAN';
             this.initLegs();
-            formName = "霸主巅峰 (TITAN)";
+            formName = "霸主巅峰";
         }
 
         if (this.onEvolve) this.onEvolve(formName, this.evolutionStage);

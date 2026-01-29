@@ -89,18 +89,18 @@ reviveModal.style.cssText = `
     font-family: 'Courier New', monospace; text-align: center;
 `;
 reviveModal.innerHTML = `
-    <h1 style="font-size: 50px; color: #ff0000; margin-bottom: 20px;">GAME OVER</h1>
-    <p style="font-size: 20px; color: #ccc;">The apex cycle is broken.</p>
+    <h1 style="font-size: 50px; color: #ff0000; margin-bottom: 20px;">游戏结束</h1>
+    <p style="font-size: 20px; color: #ccc;">弱肉强食，适者生存。</p>
     <div style="margin: 30px; padding: 20px; border: 1px solid #444; background: #111;">
-        <p style="font-size: 18px; color: #ffd700;">Evolution Points: <span id="revive-points-display">0</span></p>
-        <p style="font-size: 18px; color: #ff3d00;">Revive Cost: <span id="revive-cost-display">0</span></p>
+        <p style="font-size: 18px; color: #ffd700;">进化点数: <span id="revive-points-display">0</span></p>
+        <p style="font-size: 18px; color: #ff3d00;">复活消耗: <span id="revive-cost-display">0</span></p>
     </div>
     <div style="display: flex; gap: 20px;">
         <button id="revive-btn" style="padding: 15px 30px; font-size: 20px; background: #ff3d00; color: #fff; border: none; cursor: pointer; font-weight: bold;">
-            REVIVE
+            复活 (Revive)
         </button>
         <button id="restart-btn" style="padding: 15px 30px; font-size: 20px; background: #333; color: #fff; border: 1px solid #666; cursor: pointer;">
-            RESTART
+            重新开始 (Restart)
         </button>
     </div>
 `;
@@ -134,7 +134,7 @@ document.getElementById('revive-btn').addEventListener('click', () => {
         creeps.length = 0;
         logState("Enemies Cleared.");
 
-        texts.push(new FloatingText(player.pos.x, player.pos.y - 100, "REVIVED!", "#ffd700", 50));
+        texts.push(new FloatingText(player.pos.x, player.pos.y - 100, "复活成功!", "#ffd700", 50));
 
         isGamePaused = false; // RESUME GAME
         logState("Game Unpaused. Resuming Loop.");
@@ -144,7 +144,7 @@ document.getElementById('revive-btn').addEventListener('click', () => {
         gameLoop();
 
     } else {
-        alert("Not enough points!");
+        alert("点数不足!");
     }
 });
 
@@ -153,8 +153,8 @@ function showReviveModal() {
     logState("Player Died. Showing Revive Modal.");
     isGamePaused = true; // PAUSE GAME
 
-    // Tiered Revive Cost
-    const stage = player.evolutionStage;
+    // Tiered Revive Cost based on Max Stage Reached
+    const stage = player.maxStageReached;
     if (stage === 0) reviveCost = 1;
     else if (stage === 1) reviveCost = 2;
     else if (stage === 2) reviveCost = 3;
@@ -204,27 +204,18 @@ class EvolutionEgg {
 
 
 function updateUI() {
-    // 0: 原始种 (Primitive)
-    // 1: 蚂蚁 (Ant)
-    // 2: 瓢虫 (Ladybug)
-    // 3: 潮虫 (Pillbug)
     // 4: 蟑螂 (Cockroach)
     // 5: 蜘蛛 (Spider)
     // 6: 螳螂 (Mantis)
-    let formNames = ["原始种 (Primitive)", "蚂蚁 (Ant)", "瓢虫 (Ladybug)", "潮虫 (Pillbug)", "蟑螂 (Cockroach)", "蜘蛛 (Spider)", "螳螂 (Mantis)", "蟋蟀 (Cricket)", "大沙螽 (Giant Weta)", "竹节虫 (Stick Insect)", "狼蛛 (Tarantula)", "巨型蜈蚣 (Centipede)", "巨型毒蝎 (Scorpion)"];
-    let displayForm = formNames[player.evolutionStage] || `MARK-${player.evolutionStage}`;
+    let formNames = ["原始种", "蚂蚁", "瓢虫", "潮虫", "蟑螂", "蜘蛛", "螳螂", "蟋蟀", "大沙螽", "竹节虫", "狼蛛", "巨型蜈蚣", "巨型毒蝎", "泰坦巨虫"];
+    let displayForm = formNames[player.evolutionStage] || `MARK - ${player.evolutionStage} `;
 
     // Relative Level Calculation
     // Level is now ALWAYS 1-5 per stage logic in Ant.js
     let displayLevel = player.level;
 
     // DEBUG INFO
-    let debugInfo = `
-    <br><span style="font-size: 12px; color: #aaa;">
-    Debug: Form=${player.form} | Stage=${player.evolutionStage} | Scale=${player.scale?.toFixed(2)} | Zoom=${window.gameScale?.toFixed(3)}
-    </span>`;
-
-    statusText.innerHTML = `<strong>形态:</strong> ${displayForm} | <strong>等级:</strong> ${displayLevel} / 5 | <strong>XP:</strong> ${Math.floor(player.xp)}/${Math.floor(player.xpToNext)}` + debugInfo;
+    statusText.innerHTML = `<strong>形态:</strong> ${displayForm} | <strong>等级:</strong> ${displayLevel} / 5 | <strong>XP:</strong> ${Math.floor(player.xp)}/${Math.floor(player.xpToNext)}`;
 
 
     const staminaFill = document.getElementById('stamina-bar-fill');
@@ -236,15 +227,15 @@ function updateUI() {
 
     // Titan Quest UI
     if (player.titanQuest && player.titanQuest.active && !player.titanQuest.complete) {
-        let questHTML = `<br><span style="color: #ff3d00; font-weight:bold;">TITAN QUEST:</span>
-        <span style="color:${player.titanQuest.scorpions >= player.titanQuest.reqScorpions ? '#0f0' : '#aaa'}">Scorpions: ${player.titanQuest.scorpions}/${player.titanQuest.reqScorpions}</span> | 
-        <span style="color:${player.titanQuest.centipedes >= player.titanQuest.reqCentipedes ? '#0f0' : '#aaa'}">Centipedes: ${player.titanQuest.centipedes}/${player.titanQuest.reqCentipedes}</span> | 
-        <span style="color:${player.titanQuest.tarantulas >= player.titanQuest.reqTarantulas ? '#0f0' : '#aaa'}">Tarantulas: ${player.titanQuest.tarantulas}/${player.titanQuest.reqTarantulas}</span>`;
+        let questHTML = `<br><span style="color: #ff3d00; font-weight:bold;">泰坦任务:</span>
+        <span style="color:${player.titanQuest.scorpions >= player.titanQuest.reqScorpions ? '#0f0' : '#aaa'}">毒蝎: ${player.titanQuest.scorpions}/${player.titanQuest.reqScorpions}</span> | 
+        <span style="color:${player.titanQuest.centipedes >= player.titanQuest.reqCentipedes ? '#0f0' : '#aaa'}">蜈蚣: ${player.titanQuest.centipedes}/${player.titanQuest.reqCentipedes}</span> | 
+        <span style="color:${player.titanQuest.tarantulas >= player.titanQuest.reqTarantulas ? '#0f0' : '#aaa'}">狼蛛: ${player.titanQuest.tarantulas}/${player.titanQuest.reqTarantulas}</span>`;
         statusText.innerHTML += questHTML;
     }
 
     // Revive Points Display
-    statusText.innerHTML += `<br><span style="font-size: 16px; color: #00ffcc; font-weight: bold;">Evo Points (Revives): ${evoPoints}</span>`;
+    statusText.innerHTML += `<br><span style="font-size: 16px; color: #00ffcc; font-weight: bold;">进化点数 (复活): ${evoPoints}</span>`;
 }
 
 // Input handling
@@ -263,35 +254,28 @@ window.addEventListener('blur', () => {
     Object.keys(keys).forEach(k => keys[k] = false);
 });
 
-// Debug Button - Now "Cheat Level Up"
-document.getElementById('evolve-btn').innerText = "Cheat: Evolve";
-document.getElementById('evolve-btn').addEventListener('click', () => {
-    console.log("DEBUG: Cheat Evolve clicked.");
-    // Force immediate evolution to next stage
-    player.evolve();
+// Cheat XP Button
+if (document.getElementById('xp-btn')) {
+    document.getElementById('xp-btn').addEventListener('click', () => {
+        console.log("DEBUG: Cheat XP clicked.");
+        const needed = player.xpToNext - player.xp;
+        if (needed > 0) {
+            player.gainXp(needed);
+        }
+        // Force focus back
+        window.focus();
+        if (document.getElementById('gameCanvas')) document.getElementById('gameCanvas').focus();
+    });
+}
 
-    // Force focus back
-    window.focus();
-    if (document.getElementById('gameCanvas')) document.getElementById('gameCanvas').focus();
-});
 
-document.getElementById('xp-btn').addEventListener('click', () => {
-    console.log("DEBUG: Cheat XP clicked.");
-    const needed = player.xpToNext - player.xp;
-    if (needed > 0) {
-        player.gainXp(needed);
-    }
-    // Force focus back
-    window.focus();
-    if (document.getElementById('gameCanvas')) document.getElementById('gameCanvas').focus();
-});
 
 
 
 // Game Init
 const player = new Insect(width / 2, height / 2);
 player.onLevelUp = (lvl) => {
-    texts.push(new FloatingText(player.pos.x, player.pos.y - 50, `LEVEL UP! (${lvl})`, '#00ff00', 40));
+    texts.push(new FloatingText(player.pos.x, player.pos.y - 50, `升级! (${lvl})`, '#00ff00', 40));
 };
 player.onGainXp = (amount) => {
     texts.push(new FloatingText(player.pos.x, player.pos.y - 40, `+${amount} XP`, '#ffff00', 12, 1.0));
@@ -364,7 +348,7 @@ player.onEvolve = (formName, stage) => {
     }
 
     // Large, prominent gold text
-    texts.push(new FloatingText(player.pos.x, player.pos.y - 80, `进化成功: ${formName}!`, '#FFD700', 60, 4.0));
+    texts.push(new FloatingText(player.pos.x, player.pos.y - 80, `进化成功: ${formName}!`, '#FFD700', 40, 3.0, new Vec2(0, 0)));
 
     // Cleanup obsolete creeps immediately
     cleanupCreeps();
