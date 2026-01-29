@@ -60,20 +60,27 @@ function loadGame() {
     try {
         const data = JSON.parse(json);
 
-        // Apply Stats
-        player.level = data.level || 1;
-        player.xp = data.xp || 0;
-        player.evolutionStage = data.evolutionStage || 0;
-        player.form = data.form || 'PRIMITIVE';
-        player.maxStageReached = data.maxStageReached || 0;
-        if (data.stamina !== undefined) player.stamina = data.stamina;
+        // 1. Apply World State First (Critical for scaling)
+        player.worldTier = data.worldTier || 1.0;
+        player.worldScaleDivisor = data.worldScaleDivisor || 1.0;
+        player.worldScaleModifier = 1.0 / player.worldScaleDivisor;
 
-        // Restore or Recalculate xpToNext
+        // 2. Restore Stats via setLevel (Handles Form, Speed, Size, Legs)
+        const savedStage = data.evolutionStage || 0;
+        const savedLevel = data.level || 1;
+        player.maxStageReached = data.maxStageReached || 0;
+
+        // Use setLevel to properly reconstruct the player state
+        player.setLevel(savedStage, savedLevel);
+
+        // 3. Restore Specific Stats (XP, Stamina)
+        player.xp = data.xp || 0;
+
+        // Restore XP Threshold
         if (data.xpToNext) {
             player.xpToNext = data.xpToNext;
         } else {
-            // Fallback: Recalculate based on Level
-            // Base = 5. Factor = 1.5.
+            // Fallback Logic
             let calcXP = 5;
             for (let i = 1; i < player.level; i++) {
                 calcXP = Math.floor(calcXP * 1.5);
@@ -81,33 +88,15 @@ function loadGame() {
             player.xpToNext = calcXP;
         }
 
-        // Apply Pos
+        if (data.stamina !== undefined) player.stamina = data.stamina;
+
+        // 4. Position & Quest
         if (data.posX && data.posY) {
             player.pos = new Vec2(data.posX, data.posY);
-            // Update parts pos immediately to avoid visual glitch
             player.thoraxPos = player.pos.clone();
             player.headPos = player.pos.clone();
         }
 
-        // Apply World State
-        player.worldTier = data.worldTier || 1.0;
-        player.worldScaleDivisor = data.worldScaleDivisor || 1.0;
-
-        // Restore Scale (Visuals)
-        // We set baseScale based on Stage Config usually, but saved scale is safer for continuity
-        // Actually, let's re-init "baseScale" from config based on Stage, then apply current scale?
-        // Insect.initLegs uses this.form to pick legs.
-        if (STAGE_CONFIG[player.evolutionStage]) {
-            player.baseScale = STAGE_CONFIG[player.evolutionStage].startScale;
-            player.targetScale = STAGE_CONFIG[player.evolutionStage].endScale;
-        }
-
-        if (data.scale) player.scale = data.scale;
-
-        // Re-Initialize Legs/Parts based on Form
-        player.initLegs();
-
-        // Quest
         if (data.titanQuest) player.titanQuest = data.titanQuest;
 
         console.log("Game Loaded: " + player.form);
