@@ -46,8 +46,8 @@ export class Insect {
         this.maxSpeed = 2.0; // Primitive (Stage 0) is slower
 
         // --- Stamina ---
-        this.stamina = 400; // Doubled from 200
-        this.maxStamina = 400; // Doubled from 200
+        this.stamina = 800; // Doubled again (User Request)
+        this.maxStamina = 800;
         this.canSprint = true;
 
         // --- 成长属性 ---
@@ -1020,7 +1020,7 @@ export class Insect {
                 this.stamina -= 0.8; // Drain
                 if (this.stamina <= 0) this.stamina = 0;
             } else {
-                this.stamina += 0.45; // Regen while moving (0.3 * 1.5)
+                this.stamina += 0.9; // Regen while moving (Double speed)
                 if (this.stamina > this.maxStamina) this.stamina = this.maxStamina;
             }
 
@@ -1035,7 +1035,7 @@ export class Insect {
         } else {
             targetSpeed = 0;
             // Regen faster when standing still
-            this.stamina += 0.6; // (0.4 * 1.5)
+            this.stamina += 1.2; // Double speed when still
             if (this.stamina > this.maxStamina) this.stamina = this.maxStamina;
         }
 
