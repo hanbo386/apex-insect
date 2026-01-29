@@ -113,3 +113,83 @@ p {
 .debug-btn:active {
     transform: scale(0.95);
 }
+
+/* --- Mobile Vertical UI Adaptation --- */
+@media (max-width: 768px) and (orientation: portrait) {
+    #ui {
+        padding: 10px;
+        align-items: flex-start;
+        /* Align top */
+    }
+
+    #ui-title {
+        display: none;
+    }
+
+    .desktop-only {
+        display: none !important;
+    }
+
+    /* 1. Stats Group (Top Left) */
+    #status-container {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        flex-direction: column;
+        align-items: flex-start;
+        /* Stack vertically */
+        gap: 5px;
+
+        /* Typography */
+        font-size: 13px;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 1);
+        /* Extra contrast */
+        pointer-events: none;
+        /* Let clicks pass through stats area */
+    }
+
+    /* Ensure paragraph texts inside status are visible */
+    #status-container p {
+        margin: 2px 0;
+        color: #fff;
+        /* Ensure it stands out against potentially dark game bg */
+    }
+
+    /* 2. Buttons Group (Top Right) */
+    #ui-buttons {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        flex-direction: column;
+        align-items: flex-end;
+        /* Align right side */
+        gap: 8px;
+    }
+
+    .debug-btn {
+        margin-top: 0 !important;
+        /* Reset inline style margin */
+        padding: 8px 12px;
+        font-size: 12px;
+        /* Slightly smaller buttons */
+        opacity: 0.8;
+        /* Slight transparency to see game */
+    }
+
+    /* 3. Stamina Bar (Moved down to avoid text overlap) */
+    #ui-stamina-group {
+        position: absolute;
+        top: 80px;
+        /* Moved down from 15px */
+        left: 50%;
+        transform: translateX(-50%);
+        pointer-events: none;
+    }
+
+    #stamina-bar-bg {
+        width: 120px;
+        /* Slightly wider */
+        height: 6px;
+        border-color: rgba(255, 255, 255, 0.5);
+    }
+}

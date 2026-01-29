@@ -393,7 +393,7 @@ const corpses = []; // Dead bodies
 const texts = []; // 浮动文字
 const particles = []; // 粒子效果
 const ripples = []; // 地面震波
-const MAX_CREEPS = 4;
+const MAX_CREEPS = 5;
 
 function createParticles(x, y, color, size = 4, count = 8) {
     for (let k = 0; k < count; k++) {

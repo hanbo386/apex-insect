@@ -10,22 +10,23 @@
 <body>
 
     <div id="ui">
-        <div class="ui-group">
+        <div class="ui-group" id="ui-title">
             <h1>虫皇争霸</h1>
         </div>
-        <div class="ui-group">
+        <div class="ui-group desktop-only" id="ui-controls">
             <span>控制: <span class="key">WASD</span></span>
             <span>加速: <span class="key">Shift</span></span>
         </div>
         <div class="ui-group" id="status-container">
             <!-- Status text injected by JS -->
         </div>
-        <div class="ui-group">
+        <!-- We give this a distinct ID for targeting the group wrapper, not just the bar -->
+        <div class="ui-group" id="ui-stamina-group">
             <div id="stamina-bar-bg">
                 <div id="stamina-bar-fill"></div>
             </div>
         </div>
-        <div class="ui-group">
+        <div class="ui-group" id="ui-buttons">
             <button id="xp-btn" class="debug-btn" style="margin-top: 5px;">作弊: 经验</button>
             <button id="pause-btn" class="debug-btn" style="margin-top: 5px;">暂停游戏</button>
         </div>
