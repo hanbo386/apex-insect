@@ -148,6 +148,21 @@ document.getElementById('revive-btn').addEventListener('click', () => {
     }
 });
 
+// Pause Button Logic
+const pauseBtn = document.getElementById('pause-btn');
+pauseBtn.addEventListener('click', () => {
+    isGamePaused = !isGamePaused;
+    if (isGamePaused) {
+        pauseBtn.innerText = "继续游戏";
+        pauseBtn.style.background = "#4CAF50"; // Green for Resume
+    } else {
+        pauseBtn.innerText = "暂停游戏";
+        pauseBtn.style.background = ""; // Reset to default (CSS)
+        // Ensure loop is running
+        if (!gameLoopId) gameLoop();
+    }
+});
+
 function showReviveModal() {
     if (isGamePaused) return; // Prevent multiple calls
     logState("Player Died. Showing Revive Modal.");
@@ -378,7 +393,7 @@ const corpses = []; // Dead bodies
 const texts = []; // 浮动文字
 const particles = []; // 粒子效果
 const ripples = []; // 地面震波
-const MAX_CREEPS = 4;
+const MAX_CREEPS = 8; // Doubled population cap
 
 function createParticles(x, y, color, size = 4, count = 8) {
     for (let k = 0; k < count; k++) {
