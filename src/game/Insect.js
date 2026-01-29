@@ -542,8 +542,9 @@ export class Insect {
 
     checkLevelUp() {
         if (this.xp >= this.xpToNext) {
-            // Check Max Level
-            if (this.level >= 5) {
+            // Check Max Level (User Request: Evolve immediately upon reaching Level 5)
+            // So if we are Level 4 and fill the bar, we Evolve instead of becoming Level 5.
+            if (this.level >= 4) {
                 // At Max Level for current stage
                 // Titan Quest Logic for Scorpion (Stage 12)
                 if (this.evolutionStage === 12) {

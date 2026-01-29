@@ -1,5 +1,5 @@
 import './style.css';
-import { Insect } from './game/Insect.js';
+import { Insect, STAGE_CONFIG } from './game/Insect.js';
 import { Environment } from './game/Environment.js';
 import { Vec2 } from './game/Vec2.js';
 import { Creep } from './game/Creep.js';
@@ -21,6 +21,105 @@ let evoPoints = parseInt(localStorage.getItem('apex_evo_points') || '0');
 function saveEvoPoints() {
     localStorage.setItem('apex_evo_points', evoPoints);
 }
+
+// --- FULL GAME SAVE SYSTEM ---
+function saveGame() {
+    if (!player || player.isDead) return; // Don't save if dead (or use specific logic)
+
+    const saveData = {
+        // Stats
+        level: player.level,
+        xp: player.xp,
+        xpToNext: player.xpToNext, // Critical: Save XP threshold
+        evolutionStage: player.evolutionStage,
+        form: player.form,
+        maxStageReached: player.maxStageReached,
+        stamina: player.stamina,
+
+        // Position & Scale
+        posX: player.pos.x,
+        posY: player.pos.y,
+        scale: player.scale,
+
+        // World State
+        worldTier: player.worldTier,
+        worldScaleDivisor: player.worldScaleDivisor,
+
+        // Quests
+        titanQuest: player.titanQuest
+    };
+
+    localStorage.setItem('apex_save_v1', JSON.stringify(saveData));
+    // console.log("Game Saved");
+}
+
+function loadGame() {
+    const json = localStorage.getItem('apex_save_v1');
+    if (!json) return;
+
+    try {
+        const data = JSON.parse(json);
+
+        // Apply Stats
+        player.level = data.level || 1;
+        player.xp = data.xp || 0;
+        player.evolutionStage = data.evolutionStage || 0;
+        player.form = data.form || 'PRIMITIVE';
+        player.maxStageReached = data.maxStageReached || 0;
+        if (data.stamina !== undefined) player.stamina = data.stamina;
+
+        // Restore or Recalculate xpToNext
+        if (data.xpToNext) {
+            player.xpToNext = data.xpToNext;
+        } else {
+            // Fallback: Recalculate based on Level
+            // Base = 5. Factor = 1.5.
+            let calcXP = 5;
+            for (let i = 1; i < player.level; i++) {
+                calcXP = Math.floor(calcXP * 1.5);
+            }
+            player.xpToNext = calcXP;
+        }
+
+        // Apply Pos
+        if (data.posX && data.posY) {
+            player.pos = new Vec2(data.posX, data.posY);
+            // Update parts pos immediately to avoid visual glitch
+            player.thoraxPos = player.pos.clone();
+            player.headPos = player.pos.clone();
+        }
+
+        // Apply World State
+        player.worldTier = data.worldTier || 1.0;
+        player.worldScaleDivisor = data.worldScaleDivisor || 1.0;
+
+        // Restore Scale (Visuals)
+        // We set baseScale based on Stage Config usually, but saved scale is safer for continuity
+        // Actually, let's re-init "baseScale" from config based on Stage, then apply current scale?
+        // Insect.initLegs uses this.form to pick legs.
+        if (STAGE_CONFIG[player.evolutionStage]) {
+            player.baseScale = STAGE_CONFIG[player.evolutionStage].startScale;
+            player.targetScale = STAGE_CONFIG[player.evolutionStage].endScale;
+        }
+
+        if (data.scale) player.scale = data.scale;
+
+        // Re-Initialize Legs/Parts based on Form
+        player.initLegs();
+
+        // Quest
+        if (data.titanQuest) player.titanQuest = data.titanQuest;
+
+        console.log("Game Loaded: " + player.form);
+        logState("Loaded Save: " + player.form + " Lv." + player.level);
+
+    } catch (err) {
+        console.error("Failed to load save:", err);
+    }
+}
+
+// Auto-Save Loop
+setInterval(saveGame, 5000); // Save every 5 seconds
 
 let isGamePaused = false; // Pause flag
 let gameLoopId = null;
@@ -163,6 +262,18 @@ pauseBtn.addEventListener('click', () => {
     }
 });
 
+// UI Restart Button Logic
+const uiRestartBtn = document.getElementById('ui-restart-btn');
+if (uiRestartBtn) {
+    uiRestartBtn.addEventListener('click', () => {
+        if (confirm("确定要重新开始吗？当前进度将丢失。\nAre you sure you want to restart? Current progress will be lost.")) {
+            // Clear Run Save (But keep Evo Points)
+            localStorage.removeItem('apex_save_v1');
+            location.reload();
+        }
+    });
+}
+
 function showReviveModal() {
     if (isGamePaused) return; // Prevent multiple calls
     logState("Player Died. Showing Revive Modal.");
@@ -230,7 +341,7 @@ function updateUI() {
     let displayLevel = player.level;
 
     // DEBUG INFO
-    statusText.innerHTML = `<strong>形态:</strong> ${displayForm} | <strong>等级:</strong> ${displayLevel} / 5 | <strong>XP:</strong> ${Math.floor(player.xp)}/${Math.floor(player.xpToNext)}`;
+    statusText.innerHTML = `<strong>形态:</strong> ${displayForm} | <strong>等级:</strong> ${displayLevel} / 5 (Max) | <strong>XP:</strong> ${Math.floor(player.xp)}/${Math.floor(player.xpToNext)}`;
 
 
     const staminaFill = document.getElementById('stamina-bar-fill');
@@ -289,6 +400,10 @@ if (document.getElementById('xp-btn')) {
 
 // Game Init
 const player = new Insect(width / 2, height / 2);
+
+// --- LOAD SAVED DATA HERE ---
+loadGame();
+
 player.onLevelUp = (lvl) => {
     texts.push(new FloatingText(player.pos.x, player.pos.y - 50, `升级! (${lvl})`, '#00ff00', 40));
 };
