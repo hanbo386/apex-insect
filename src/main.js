@@ -58,19 +58,19 @@ modal.style.cssText = `
     font-family: 'Courier New', monospace; text-align: center; border: 2px solid #ff3d00;
 `;
 modal.innerHTML = `
-    <h1 style="font-size: 40px; margin-bottom: 20px; text-shadow: 0 0 10px red;">⚠️ EVOLUTION WARNING ⚠️</h1>
-    <h2 style="color: #fff; margin-bottom: 30px;">Titan Form Detected</h2>
+    <h1 style="font-size: 40px; margin-bottom: 20px; text-shadow: 0 0 10px red;">⚠️ 进化警告 ⚠️</h1>
+    <h2 style="color: #fff; margin-bottom: 30px;">检测到泰坦形态</h2>
     <p style="font-size: 18px; max-width: 600px; line-height: 1.6; color: #ccc; margin-bottom: 40px;">
-        恭喜你进化为巨型毒蝎！距离虫群至尊 (Swarm Sovereign) 仅一步之遥。<br><br>
-        <span style="color: #d4c490;">RITUAL REQUIRED:</span><br>
-        Devour <strong style="color: #ff3d00">50 Scorpions</strong><br>
-        Devour <strong style="color: #ff3d00">30 Centipedes</strong><br>
-        Devour <strong style="color: #ff3d00">20 Tarantulas</strong>
+        恭喜你进化为巨型毒蝎！距离虫群至尊 仅一步之遥。<br><br>
+        <span style="color: #d4c490;">达成条件:</span><br>
+        吞噬 <strong style="color: #ff3d00">50 只蝎子</strong><br>
+        吞噬 <strong style="color: #ff3d00">30 只蜈蚣</strong><br>
+        吞噬 <strong style="color: #ff3d00">20 只捕狼蛛</strong>
     </p>
     <button id="start-quest-btn" style="
         padding: 15px 40px; font-size: 24px; background: #ff3d00; color: #000; 
         border: none; cursor: pointer; font-weight: bold; box-shadow: 0 0 20px red;
-    ">INITIATE RITUAL</button>
+    ">开启仪式</button>
 `;
 document.body.appendChild(modal);
 
@@ -1187,7 +1187,8 @@ function gameLoop() {
         // So we don't need to change environment drawing AT ALL.
         // The "Giant Grid" effect happens naturally because the player is tiny!
         // Pass currentTier to draw function
-        env.draw(ctx, camera, width, height, window.gameScale, currentTier);
+        let renderTier = Math.floor(player.worldTier || 1);
+        env.draw(ctx, camera, width, height, window.gameScale, renderTier);
 
         // Draw Corpses (Fade out)
         corpses.forEach(c => {

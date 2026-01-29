@@ -10,32 +10,66 @@ export class Environment {
         this.initCache();
     }
 
-    initGround() {
-        // Updated to use richer sandy texture style
+    initGround(tier = 1) {
+        this.currentTier = tier;
         this.groundCanvas.width = 512;
         this.groundCanvas.height = 512;
 
-        // Base Sand Color
-        this.groundCtx.fillStyle = '#D2B48C';
+        let baseColor, noiseColor1, noiseColor2, stoneColor;
+
+        if (tier === 2) {
+            // World 2: Forest Floor (Subtle Brown/Green Tint, not dark)
+            // Original Sand: #D2B48C. 
+            // New: Desaturated Earthy Brown
+            baseColor = '#C8B59E';
+            noiseColor1 = '#B09A80';
+            noiseColor2 = '#A08A70';
+            stoneColor = '#795548';
+        } else if (tier === 3) {
+            // World 3: Ashen Wasteland (Subtle Red/Grey, not dark)
+            baseColor = '#C0A0A0'; // Desaturated Reddish Grey
+            noiseColor1 = '#A08080';
+            noiseColor2 = '#907070';
+            stoneColor = '#8D6E63';
+        } else if (tier >= 4) {
+            // World 4: Titan Realm (Mystic Lighter Purple)
+            baseColor = '#9FA0C4'; // Pale Lavender/Grey
+            noiseColor1 = '#8485AA';
+            noiseColor2 = '#6D6E90';
+            stoneColor = '#5A5B7A';
+        } else {
+            // World 1: Sand (Default)
+            baseColor = '#D2B48C';
+            noiseColor1 = '#C2A278';
+            noiseColor2 = '#E2C49C';
+            stoneColor = '#A89F91';
+        }
+
+        // Base Color
+        this.groundCtx.fillStyle = baseColor;
         this.groundCtx.fillRect(0, 0, 512, 512);
 
-        // Noise (Sand grains)
-        for (let i = 0; i < 3000; i++) {
+        // Noise
+        // Tier 3 gets coarser noise
+        let noiseCount = (tier === 3) ? 1500 : 3000;
+        let noiseSizeBase = (tier === 3) ? 4 : 2;
+
+        for (let i = 0; i < noiseCount; i++) {
             const x = Math.random() * 512;
             const y = Math.random() * 512;
-            const size = Math.random() * 2;
-            this.groundCtx.fillStyle = Math.random() > 0.5 ? '#C2A278' : '#E2C49C';
+            const size = Math.random() * noiseSizeBase;
+            this.groundCtx.fillStyle = Math.random() > 0.5 ? noiseColor1 : noiseColor2;
             this.groundCtx.fillRect(x, y, size, size);
         }
 
-        // Small Stones/Pebbles
+        // Stones/Pebbles
         for (let i = 0; i < 50; i++) {
             const x = Math.random() * 512;
             const y = Math.random() * 512;
             const r = Math.random() * 3 + 1;
             this.groundCtx.beginPath();
             this.groundCtx.arc(x, y, r, 0, Math.PI * 2);
-            this.groundCtx.fillStyle = '#A89F91';
+            this.groundCtx.fillStyle = stoneColor;
             this.groundCtx.fill();
         }
 
@@ -188,6 +222,12 @@ export class Environment {
     }
 
     draw(ctx, camera, width, height, scale = 1.0, tier = 1) {
+        // Detect Tier Change
+        if (this.currentTier !== tier) {
+            console.log(`Environment: Switching to Tier ${tier}`);
+            this.initGround(tier);
+        }
+
         ctx.save();
 
         // 1. Background Pattern
@@ -201,7 +241,7 @@ export class Environment {
         // The pattern tiles based on World Origin (0,0) due to ctx transform
         ctx.fillRect(camera.x - width / scale, camera.y - height / scale, width * 3 / scale, height * 3 / scale);
 
-        // --- SAND GRAINS (TIER 2 VISUAL ONLY) ---
+        // --- SAND GRAINS (TIER 2 VISUAL ONLY - REDUNDANT NOW, handled by initGround noise) ---
         if (typeof tier !== 'undefined' && tier === 2) {
             // Draw noise pattern "on screen"
             // Using stable random based on screen coordinates? No, must anchor to world.
@@ -488,51 +528,41 @@ export class Environment {
         // LOD Thresholds
         const pixelThreshold = 4; // Min pixels to draw
 
-        // --- TIER 2: Sand Grains & Special Objects ---
+        // --- TIER 2: Forest ---
         if (tier === 2) {
-            // 1. Sand Grains (Visual Noise)
-            // Cull if scale is small (Zoomed out)
-            if (scale > 0.6) {
-                ctx.fillStyle = '#dcb68a';
-                for (let g = 0; g < 12; g++) {
-                    let gs = Math.abs(Math.sin(baseX + g * 55.1) * 1234.5);
-                    let gx = baseX + (gs % 1) * gridSize;
-                    let gy = baseY + ((gs * 10) % 1) * gridSize;
-                    ctx.fillRect(gx, gy, 3, 3);
-                }
-            }
-
-            // 2. Stones (Cached)
-            if ((seed * 10) % 1 < 0.02) {
-                let sx = baseX + ((seed * 555) % 1) * gridSize;
-                let sy = baseY + ((seed * 777) % 1) * gridSize;
-                let sSize = (30 + (seed % 1) * 40); // 30-70 radius
-
-                let cacheIdx = Math.floor((seed * 100) % this.stoneCache.length);
-                let sprite = this.stoneCache[cacheIdx];
-
-                // Sprite Base Size is 160 (2x80). We want drawn size approx sSize*2.
-                // Scale factor: sSize / 80
-                let drawScale = sSize / 80.0;
+            // 1. Ferns (Spiky Greenery)
+            if ((seed * 10) % 1 < 0.05) { // 5% Chance
+                // Draw Fern
+                let fx = baseX + ((seed * 111) % 1) * gridSize;
+                let fy = baseY + ((seed * 222) % 1) * gridSize;
+                let fSize = 40 + (seed % 1) * 30;
+                let rot = (seed * 333) % 6.28;
 
                 ctx.save();
-                ctx.translate(sx, sy);
-                ctx.scale(drawScale, drawScale);
-                ctx.drawImage(sprite, -80, -80);
+                ctx.translate(fx, fy);
+                ctx.rotate(rot);
+                ctx.fillStyle = '#556B2F'; // Dark Olive Green
+                ctx.beginPath();
+                // Simple 5-point fern shape
+                for (let leaf = 0; leaf < 5; leaf++) {
+                    ctx.rotate(0.5);
+                    ctx.moveTo(0, 0);
+                    ctx.quadraticCurveTo(10, 5, 0, fSize);
+                    ctx.quadraticCurveTo(-10, 5, 0, 0);
+                }
+                ctx.fill();
                 ctx.restore();
                 return;
             }
 
-            // 3. Mushrooms (Cached)
-            else if ((seed * 20) % 1 < 0.015) {
+            // 2. Mushrooms (Using Cache)
+            if ((seed * 20) % 1 < 0.02) {
                 let mx = baseX + ((seed * 888) % 1) * gridSize;
                 let my = baseY + ((seed * 999) % 1) * gridSize;
                 let mSize = 35 + ((seed * 100) % 1) * 20;
 
                 let cacheIdx = ((seed * 10) % 1 > 0.5) ? 1 : 0; // Brown or Red
                 let sprite = this.mushroomCache[cacheIdx];
-
-                // Sprite Base Scale: 60 radius (120px)
                 let drawScale = mSize / 60.0;
                 let mRot = (seed * 500) % (Math.PI * 2);
 
@@ -541,6 +571,204 @@ export class Environment {
                 ctx.rotate(mRot);
                 ctx.scale(drawScale, drawScale);
                 ctx.drawImage(sprite, -60, -60);
+                ctx.restore();
+                return;
+            }
+
+            // 3. Giant Logs (Rare)
+            if ((seed * 5) % 1 < 0.005) { // 0.5% Chance
+                let lx = baseX + ((seed * 123) % 1) * gridSize;
+                let ly = baseY + ((seed * 456) % 1) * gridSize;
+                let lLen = 200 + (seed % 1) * 100;
+                let lWid = 40 + (seed % 1) * 20;
+                let lRot = (seed * 789) % 3.14;
+
+                ctx.save();
+                ctx.translate(lx, ly);
+                ctx.rotate(lRot);
+                ctx.fillStyle = '#3E2723';
+                ctx.fillRect(-lLen / 2, -lWid / 2, lLen, lWid);
+                // Moss on log
+                ctx.fillStyle = '#4CA64C';
+                ctx.beginPath();
+                ctx.arc(-lLen / 3, 0, lWid / 2, 0, 6.28);
+                ctx.fill();
+                ctx.restore();
+                return; // Replaces leaves
+            }
+        }
+
+        // --- TIER 3: Wasteland ---
+        if (tier === 3) {
+            // 1. Bones (Sprawled)
+            if ((seed * 15) % 1 < 0.03) {
+                let bx = baseX + ((seed * 321) % 1) * gridSize;
+                let by = baseY + ((seed * 654) % 1) * gridSize;
+                let bLen = 60 + (seed % 1) * 40;
+                let rot = (seed * 987) % 6.28;
+
+                ctx.save();
+                ctx.translate(bx, by);
+                ctx.rotate(rot);
+                ctx.fillStyle = '#D7CCC8'; // Bone White
+                ctx.beginPath();
+                // Bone shape: Circle - Rect - Circle
+                ctx.arc(-bLen / 2, 0, 8, 0, 6.28);
+                ctx.arc(bLen / 2, 0, 8, 0, 6.28);
+                ctx.rect(-bLen / 2, -4, bLen, 8);
+                ctx.fill();
+                ctx.restore();
+                return;
+            }
+
+            // 2. Crystals (Sharp)
+            if ((seed * 25) % 1 < 0.02) {
+                let cx = baseX + ((seed * 444) % 1) * gridSize;
+                let cy = baseY + ((seed * 222) % 1) * gridSize;
+                let cSize = 40 + (seed % 1) * 30;
+
+                ctx.save();
+                ctx.translate(cx, cy);
+                let rot = (seed * 100) % 6.28;
+                ctx.rotate(rot);
+
+                ctx.fillStyle = 'rgba(220, 20, 60, 0.7)';
+                ctx.beginPath();
+                ctx.moveTo(0, -cSize);
+                ctx.lineTo(cSize * 0.3, 0);
+                ctx.lineTo(0, cSize);
+                ctx.lineTo(-cSize * 0.3, 0);
+                ctx.fill();
+                ctx.restore();
+                return;
+            }
+
+            // 3. Giant Ribs (Rare/Grand)
+            if ((seed * 7) % 1 < 0.005) {
+                let gx = baseX + ((seed * 555) % 1) * gridSize;
+                let gy = baseY + ((seed * 777) % 1) * gridSize;
+                let gSize = 250;
+                let rot = (seed * 888) % 6.28;
+
+                ctx.save();
+                ctx.translate(gx, gy);
+                ctx.rotate(rot);
+                ctx.strokeStyle = '#D7CCC8';
+                ctx.lineWidth = 15;
+                ctx.beginPath();
+                ctx.arc(0, 0, gSize / 2, 3.14, 0); // Semicircle rib
+                ctx.stroke();
+                ctx.restore();
+                return;
+            }
+        }
+
+        // --- TIER 4: Titan Realm ---
+        if (tier >= 4) {
+            // 1. Alien Runes/Marks (Ground detail)
+            if (scale > 0.6) {
+                ctx.fillStyle = '#4A2F4C';
+                for (let g = 0; g < 6; g++) {
+                    let gs = Math.abs(Math.sin(baseX + g * 44.4) * 9876.5);
+                    let gx = baseX + (gs % 1) * gridSize;
+                    let gy = baseY + ((gs * 10) % 1) * gridSize;
+                    // Draw random Rune-like lines
+                    ctx.fillRect(gx, gy, 15, 2);
+                    ctx.fillRect(gx + 5, gy - 5, 2, 12);
+                }
+            }
+
+            // 2. Giant Monoliths (Grand Structures)
+            if ((seed * 30) % 1 < 0.015) { // Rare 1.5%
+                let ox = baseX + ((seed * 111) % 1) * gridSize;
+                let oy = baseY + ((seed * 222) % 1) * gridSize;
+                let mH = 250 + (seed % 1) * 150; // Huge Height
+                let mW = 60 + (seed % 1) * 40;
+                let rot = (seed * 555) % 0.5 - 0.25; // Slight tilt
+
+                ctx.save();
+                ctx.translate(ox, oy);
+                ctx.rotate(rot);
+
+                // Main Pillar
+                ctx.fillStyle = '#222'; // Obsidian
+                ctx.fillRect(-mW / 2, -mH, mW, mH);
+
+                // Highlight Edge
+                ctx.strokeStyle = '#554';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(-mW / 2, -mH);
+                ctx.lineTo(-mW / 2, 0);
+                ctx.stroke();
+
+                // Rune on Monolith
+                ctx.strokeStyle = '#E040FB';
+                ctx.lineWidth = 2;
+                ctx.globalAlpha = 0.6;
+                ctx.beginPath();
+                ctx.moveTo(-mW * 0.2, -mH * 0.8);
+                ctx.lineTo(mW * 0.2, -mH * 0.8);
+                ctx.moveTo(0, -mH * 0.85);
+                ctx.lineTo(0, -mH * 0.5);
+                ctx.stroke();
+
+                ctx.restore();
+                return;
+            }
+
+            // 2b. Ancient Craters (Impact Zones)
+            if ((seed * 60) % 1 < 0.01) { // Rare 1%
+                let cx = baseX + ((seed * 333) % 1) * gridSize;
+                let cy = baseY + ((seed * 444) % 1) * gridSize;
+                let cR = 150 + (seed % 1) * 100;
+
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.scale(1, 0.6); // Perspective squash
+
+                // Crater Floor
+                ctx.fillStyle = '#1A1020'; // Darker than ground
+                ctx.beginPath();
+                ctx.arc(0, 0, cR, 0, 6.28);
+                ctx.fill();
+
+                // Rim
+                ctx.strokeStyle = '#3E2740';
+                ctx.lineWidth = 10;
+                ctx.stroke();
+
+                ctx.restore();
+                // No return, allow smaller decor on top? No, crater flattens.
+                return;
+            }
+
+            // 3. Obsidian Spikes
+            if ((seed * 40) % 1 < 0.02) {
+                let sx = baseX + ((seed * 555) % 1) * gridSize;
+                let sy = baseY + ((seed * 666) % 1) * gridSize;
+                let sH = 60 + (seed % 1) * 50;
+                let sW = 20 + (seed % 1) * 10;
+                let rot = (seed * 777) % 6.28;
+
+                ctx.save();
+                ctx.translate(sx, sy);
+                ctx.rotate(rot);
+                ctx.fillStyle = '#1A1A1A'; // Black
+                ctx.beginPath();
+                ctx.moveTo(0, -sH);
+                ctx.lineTo(sW, 0);
+                ctx.lineTo(-sW, 0);
+                ctx.fill();
+
+                // Highlight
+                ctx.strokeStyle = '#4A2F4C';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, -sH);
+                ctx.lineTo(sW * 0.5, 0);
+                ctx.stroke();
+
                 ctx.restore();
                 return;
             }
