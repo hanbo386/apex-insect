@@ -24,7 +24,7 @@ function saveEvoPoints() {
 
 // --- FULL GAME SAVE SYSTEM ---
 function saveGame() {
-    if (!player || player.isDead) return; // Don't save if dead (or use specific logic)
+    if (!player || player.isDead || isGamePaused) return; // Don't save if dead or paused
 
     const saveData = {
         // Stats
@@ -217,11 +217,14 @@ document.getElementById('revive-btn').addEventListener('click', () => {
         // Reset Keys to prevent stuck movement
         Object.keys(keys).forEach(k => keys[k] = false);
 
-        // Restore Player
+        // Restore System: Load last safe checkpoint
+        loadGame();
+
+        // Override Critical State for Revive
+        player.isDead = false;
         player.stamina = player.maxStamina;
-        player.pos = new Vec2(0, 0); // Reset position to safe zone
-        player.restoreMaxStage(); // Restore to highest stage achieved
-        logState("Player Reset to (0,0) and Stage Restored.");
+        player.pos = new Vec2(0, 0); // Force Safety
+        logState("Player Resurrected. Checkpoint Loaded.");
 
         // --- ACTION: Clear All NPCs ---
         creeps.length = 0;
@@ -272,6 +275,7 @@ function showReviveModal() {
     if (isGamePaused) return; // Prevent multiple calls
     logState("Player Died. Showing Revive Modal.");
     isGamePaused = true; // PAUSE GAME
+    if (player) player.isDead = true; // Prevent saving
 
     // Tiered Revive Cost based on Max Stage Reached
     const stage = player.maxStageReached;
@@ -335,7 +339,7 @@ function updateUI() {
     let displayLevel = player.level;
 
     // DEBUG INFO
-    statusText.innerHTML = `<strong>形态:</strong> ${displayForm} | <strong>等级:</strong> ${displayLevel} / 5 (Max) | <strong>XP:</strong> ${Math.floor(player.xp)}/${Math.floor(player.xpToNext)}`;
+    statusText.innerHTML = `<strong>形态:</strong> ${displayForm} | <strong>等级:</strong> ${displayLevel} / 5 | <strong>XP:</strong> ${Math.floor(player.xp)}/${Math.floor(player.xpToNext)}`;
 
 
     const staminaFill = document.getElementById('stamina-bar-fill');
@@ -579,6 +583,24 @@ function spawnEvoEgg() {
     console.log(`[Spawn] Egg at scale ${eggScale.toFixed(2)}`);
 }
 
+function spawnGreenFood() {
+    let scale = window.gameScale || 1.0;
+    let visibleRadius = Math.max(width, height) / scale / 2;
+    let angle = Math.random() * Math.PI * 2;
+    let dist = visibleRadius + 50 + Math.random() * 200;
+    let spawnPos = player.pos.add(new Vec2(Math.cos(angle), Math.sin(angle)).mult(dist));
+
+    let food = new Creep(spawnPos.x, spawnPos.y);
+    // Optional: Scale food size slightly for bigger ants
+    if (scale < 1.0) food.size *= (1 / scale) * 0.5;
+
+    // Apply World Shrink
+    if (player.worldScaleDivisor && player.worldScaleDivisor > 1.0) {
+        food.size /= player.worldScaleDivisor;
+    }
+    creeps.push(food);
+}
+
 function spawnNPC() {
     // Dynamic Spawn Range based on Zoom
     let scale = window.gameScale || 1.0;
@@ -587,81 +609,64 @@ function spawnNPC() {
     let dist = visibleRadius + 100 + Math.random() * 400;
     let spawnPos = player.pos.add(new Vec2(Math.cos(angle), Math.sin(angle)).mult(dist));
 
-    // Weighted Spawning Logic
-    // 70% Food, 30% Chance for Rival Logic
-    let isFood = Math.random() < 0.70;
+    // Weighted Spawning Logic: 100% RIVALS (Food is separate now)
     let targetStage = -1;
 
-    if (!isFood) {
-        // Attempt to spawn a Rival
-        let r = Math.random();
-        if (r < 0.67) {
-            targetStage = player.evolutionStage - 1;
-        } else if (r < 0.77) {
-            targetStage = player.evolutionStage - 2;
-        } else if (r < 0.87) {
-            targetStage = player.evolutionStage;
-        } else if (r < 0.97) {
-            targetStage = player.evolutionStage + 1;
-        } else {
-            targetStage = player.evolutionStage + 2; // 3% Chance
-        }
+    // Use Static Probabilities (Original Logic)
+    // 67% Weak (-1)
+    // 10% Weak (-2)
+    // 10% Same
+    // 10% Strong (+1)
+    // 3% Very Strong (+2)
+
+    let r = Math.random();
+    if (r < 0.67) {
+        targetStage = player.evolutionStage - 1;
+    } else if (r < 0.82) {
+        targetStage = player.evolutionStage - 2;
+    } else if (r < 0.96) {
+        targetStage = player.evolutionStage;
+    } else if (r < 0.99) {
+        targetStage = player.evolutionStage + 1;
+    } else {
+        targetStage = player.evolutionStage + 2;
     }
 
     // --- Unique Titan & Boss Logic ---
     if (targetStage >= 13) targetStage = 12;
 
-    // If target stage is valid (>= 0), spawn NPC Insect
-    if (targetStage >= 0) {
-        let rival = new Insect(spawnPos.x, spawnPos.y);
+    // Only spawn if valid stage (>= 0)
+    if (targetStage < 0) return;
 
-        // Always Level 1
-        try {
-            rival.setLevel(targetStage, 1);
-        } catch (err) {
-            console.error("Error setting level:", err);
-            return; // Skip spawn
-        }
+    let rival = new Insect(spawnPos.x, spawnPos.y);
 
-        // DOUBLE CHECK: Ensure we didn't spawn a weakling due to bug
-        if (rival.evolutionStage < player.evolutionStage - 2) {
-            return;
-        }
-
-        // --- Scale Scaling for World Reset ---
-        // New NPCs must match the player's "Shrunk" world scale
-        if (player.worldScaleDivisor && player.worldScaleDivisor > 1.0) {
-            let shrinkFactor = 1.0 / player.worldScaleDivisor;
-            rival.scale *= shrinkFactor;
-            rival.baseScale *= shrinkFactor;
-            rival.targetScale *= shrinkFactor;
-            rival.worldTier = player.worldTier;
-            rival.initLegs();
-        }
-
-        rival.isRival = true;
-        creeps.push(rival);
-    } else {
-        // Target stage < 0 (Low level food / Creep)
-        if (player.evolutionStage < 2) {
-            let food = new Creep(spawnPos.x, spawnPos.y);
-            // Optional: Scale food size slightly for bigger ants
-            if (scale < 1.0) food.size *= (1 / scale) * 0.5;
-
-            // Apply World Shrink
-            if (player.worldScaleDivisor && player.worldScaleDivisor > 1.0) {
-                food.size /= player.worldScaleDivisor;
-            }
-
-            creeps.push(food);
-        } else {
-            // FALLBACK FOR HIGH LEVEL MAPS:
-            // If we rolled 'Food' but can't spawn food, rolling a small chance for an Egg is nice,
-            // but we have dedicated egg logic now.
-            // Let's spawn a weak NPC instead? Or just return.
-            // Return to keep populations clean.
-        }
+    // Always Level 1
+    try {
+        rival.setLevel(targetStage, 1);
+    } catch (err) {
+        console.error("Error setting level:", err);
+        return; // Skip spawn
     }
+
+    // DOUBLE CHECK: Ensure we didn't spawn a weakling due to bug
+    // (Logic above sets targetStage, but let's be safe)
+    if (rival.evolutionStage < player.evolutionStage - 2) {
+        return;
+    }
+
+    // --- Scale Scaling for World Reset ---
+    // New NPCs must match the player's "Shrunk" world scale
+    if (player.worldScaleDivisor && player.worldScaleDivisor > 1.0) {
+        let shrinkFactor = 1.0 / player.worldScaleDivisor;
+        rival.scale *= shrinkFactor;
+        rival.baseScale *= shrinkFactor;
+        rival.targetScale *= shrinkFactor;
+        rival.worldTier = player.worldTier;
+        rival.initLegs();
+    }
+
+    rival.isRival = true;
+    creeps.push(rival);
 }
 
 
@@ -737,35 +742,49 @@ function gameLoop() {
         updateUI();
 
         // Creep Logic
-        // Dynamic generation count based on zoom
-        // Base: 30. If scale 0.15 => 30 / 0.15 = 200. Cap at 150 to prevent lag.
-        let currentScale = window.gameScale || 1.0;
+        // FIXED LIMITS (User Requested removal of Scaling Logic)
 
-        // We want density to remain somewhat constant. Area scales with 1/scale^2.
-        // However, linear scaling (1/scale) explodes at low zoom (Spider).
-        // Use sqrt scaling for a softer curve, and cap absolute max.
-        // At scale 0.1 (Spider): 8 / 0.1 = 80 (Too many).
-        // 8 / sqrt(0.1) = 8 / 0.31 = 25 (Better).
-        // Let's also hard cap it to avoid performance issues.
-        let limitBase = MAX_CREEPS;
-        if (player.evolutionStage === 0) limitBase = MAX_CREEPS * 2; // Double for primitive
-        if (player.form === 'MANTIS') limitBase = 6; // Hard cap for Mantis to avoid clutter
-        let dynamicLimit = Math.min(15, Math.floor(limitBase / Math.sqrt(currentScale)));
+        // --- NEW SPAWN LOGIC (User Request) ---
+        // 1. Separate Counts
+        let countRivals = 0;
+        let countFood = 0;
+        let countEggs = 0;
 
-        if (creeps.length < dynamicLimit) {
-            // 1. Independent Egg Spawning
-            // IF no eggs, high chance to spawn. IF eggs exist, low chance.
-            let eggCount = creeps.filter(c => c.isEgg).length;
-            if (eggCount === 0) {
-                if (Math.random() < 0.2) spawnEvoEgg();
-            } else if (eggCount < 2) {
-                if (Math.random() < 0.05) spawnEvoEgg();
-            }
+        creeps.forEach(c => {
+            if (c.isRival) countRivals++;
+            else if (c.isEgg) countEggs++;
+            else countFood++; // Basic green food
+        });
 
-            // 2. Independent NPC Spawning
-            // Standard chance for enemies/food
-            if (Math.random() < 0.1) spawnNPC();
+        // 2. NPC Limit (Rivals)
+        // Fixed Limit: 6
+        let limitNPC = 6;
+        if (player.form === 'MANTIS') limitNPC = 3; // Mantis duel limit
+
+        // 3. Food Limit (Green Creeps)
+        let limitFood = 8;
+
+        // STOP generating food if Stage >= 2 (Ladybug)
+        // Stage 0 (Primitive), Stage 1 (Ant) -> Spawn Food
+        // Stage 2 (Ladybug) -> Stop
+        if (player.evolutionStage >= 2) {
+            limitFood = 0;
         }
+
+        // 4. Execution
+        // Spawn Eggs (Independent)
+        if (countEggs < 2 && Math.random() < 0.05) spawnEvoEgg();
+
+        // Spawn Rivals
+        if (countRivals < limitNPC && Math.random() < 0.1) {
+            spawnNPC();
+        }
+
+        // Spawn Food
+        if (countFood < limitFood && Math.random() < 0.2) {
+            spawnGreenFood();
+        }
+
 
         for (let i = creeps.length - 1; i >= 0; i--) {
             let c = creeps[i];
@@ -1263,7 +1282,7 @@ function gameLoop() {
         if (player.form === 'STICK_INSECT') baseRadius = 150;
         if (player.form === 'TARANTULA') baseRadius = 130;
         if (player.form === 'RHINO_BEETLE') baseRadius = 160;
-        if (player.form === 'GIANT_WETA') baseRadius = 240; // Force zoom out
+        if (player.form === 'GIANT_WETA') baseRadius = 160; // Reduced from 240
         if (player.form === 'CENTIPEDE') baseRadius = 220;
         if (player.form === 'SCORPION') baseRadius = 180;
         if (player.form === 'TITAN') baseRadius = 450;

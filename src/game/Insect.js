@@ -826,6 +826,8 @@ export class Insect {
         } else if (this.evolutionStage === 4) {
             this.form = 'COCKROACH';
             this.maxSpeed *= 1.3;
+            // Reduced Vision for Cockroach NPC
+            this.visionRadius = 250;
 
             this.initLegs();
 
@@ -886,6 +888,9 @@ export class Insect {
         } else if (this.evolutionStage === 10) {
             this.form = 'TARANTULA';
             this.maxSpeed *= 1.1; // Faster?
+            // Increased Vision for Tarantula NPC
+            this.visionRadius = 600;
+
             this.initLegs();
             formName = "狼蛛";
         } else if (this.evolutionStage === 11) {
